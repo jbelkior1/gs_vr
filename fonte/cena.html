@@ -1,0 +1,24 @@
+<!-- Cena VR: so entra no DOM quando o usuario abre o VR (economiza bateria na analise) -->
+<template id="tplCena">
+  <a-scene station sfx loading-screen="enabled: false"
+           cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"
+           fog="type: exponential; color: #22344d; density: 0.011"
+           renderer="antialias: true; colorManagement: true; maxCanvasWidth: 1600; maxCanvasHeight: 1600"
+           shadow="type: pcf"
+           device-orientation-permission-ui="deviceMotionMessage: Para olhar em volta, o Ponto W precisa usar os sensores de movimento do celular.; httpsMessage: Abra esta p&aacute;gina por HTTPS para usar o VR e os sensores do celular.; allowButtonText: Permitir; denyButtonText: Agora n&atilde;o; cancelButtonText: Cancelar">
+    <a-sky radius="150" gradient-sky></a-sky>
+    <a-entity id="mundo" pw-cena></a-entity>
+    <a-entity id="dinamico"></a-entity>
+    <a-entity id="rig" position="0 0 14">
+      <a-entity camera="near: 0.1; far: 400" look-controls wasd-controls="acceleration: 20" position="0 1.6 0">
+        <a-entity cursor="fuse: true; fuseTimeout: 1500"
+                  raycaster="objects: .clickable; far: 40"
+                  position="0 0 -1.1"
+                  geometry="primitive: ring; radiusInner: 0.013; radiusOuter: 0.021"
+                  material="color: #ffffff; shader: flat; opacity: 0.9"
+                  animation__fuse="property: scale; startEvents: fusing; from: 1 1 1; to: 2.2 2.2 2.2; dur: 1500; easing: easeInCubic"
+                  animation__reset="property: scale; startEvents: mouseleave, click; to: 1 1 1; dur: 150"></a-entity>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+</template>
