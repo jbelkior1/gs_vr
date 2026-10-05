@@ -1,0 +1,178 @@
+<div id="ui">
+  <header class="topo">
+    <div class="marca">
+      <svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="41" fill="none" stroke="#e3262f" stroke-width="10"/><path d="M23 36 L37 69 L50 46 L63 69 L77 36" fill="none" stroke="#fff" stroke-width="10" stroke-linejoin="miter"/></svg>
+      <span>PONTO <b>W</b></span>
+    </div>
+    <div class="passos" id="passos" aria-label="Etapas"><span></span><span></span><span></span><span></span></div>
+  </header>
+
+  <!-- Início -->
+  <section id="telaInicio" class="tela ativa" data-passo="0">
+    <p class="eyebrow">Franquia de recarga GoodWe</p>
+    <h1>O Ponto W cabe no seu comércio?</h1>
+    <p class="lead">Fotografe o estacionamento. Em um minuto você vê se o eletroposto cabe ali, quanto ele rende e entra nele em realidade virtual.</p>
+    <div class="heroi"><canvas id="cvHeroi" width="1280" height="720"></canvas></div>
+    <button id="btnAvaliar" class="btn primario">Avaliar meu local</button>
+    <button id="btnModelo" class="btn">Ver o Ponto W modelo em VR</button>
+    <p class="nota">Funciona no navegador do celular, sem instalar nada. Para o VR, o melhor é o Chrome no Android; no iPhone a cena acompanha o giroscópio em tela cheia.</p>
+  </section>
+
+  <!-- 1. Foto -->
+  <section id="telaFoto" class="tela" data-passo="1">
+    <p class="eyebrow">Passo 1 de 4</p>
+    <h2>Foto do local</h2>
+    <ul class="dicas">
+      <li><span class="n">1</span><span><b>Fique em pé</b> na entrada do estacionamento, de frente para a fachada.</span></li>
+      <li><span class="n">2</span><span><b>Celular deitado</b> (na horizontal). Os 4 cantos da área das futuras vagas precisam aparecer na foto: se não couber, dê alguns passos para trás.</span></li>
+      <li><span class="n">3</span><span><b>Sem zoom.</b> Use a câmera 1x (ou a 0,5x, se faltar espaço). A medida lê a lente pela própria foto.</span></li>
+    </ul>
+    <label class="btn primario">Tirar foto<input id="inCamera" type="file" accept="image/*" capture="environment"></label>
+    <label class="btn">Escolher da galeria<input id="inGaleria" type="file" accept="image/*"></label>
+    <button id="btnExemplo" class="btn link">Usar uma foto de exemplo</button>
+    <p class="msg" id="msgFoto" role="alert"></p>
+  </section>
+
+  <!-- 2. Marcar -->
+  <section id="telaMarcar" class="tela" data-passo="2">
+    <p class="eyebrow">Passo 2 de 4</p>
+    <h2>Marque a área das vagas</h2>
+    <p>Toque nos <b>4 cantos</b> do espaço onde ficariam as vagas com carregador. Depois dá para arrastar cada canto.</p>
+    <div class="foto">
+      <canvas id="cvMarcar" role="img" aria-label="Foto do local: toque nos 4 cantos da área das vagas"></canvas>
+      <span class="selo" id="seloMarcar">Toque no 1º canto</span>
+      <span class="selo dir" id="seloFonte" hidden></span>
+    </div>
+    <div class="lado-a-lado">
+      <button id="btnLimpar" class="btn">Limpar</button>
+      <button id="btnTrocarFrente" class="btn" disabled>Trocar frente</button>
+    </div>
+
+    <div class="cartao">
+      <fieldset id="fsRef">
+        <legend>Uma medida para dar a escala</legend>
+        <label class="opcao"><input type="radio" name="ref" value="altura" checked><span>Não sei medidas: tirei a foto em pé, com o celular a <input type="number" id="refAltura" value="1.5" min="0.5" max="3" step="0.1" inputmode="decimal" aria-label="Altura do celular em metros"> m<small>Mais rápido e menos preciso. Se souber alguma medida, use as opções abaixo.</small></span></label>
+        <label class="opcao"><input type="radio" name="ref" value="vagas"><span>A frente tem <input type="number" id="refVagas" value="3" min="1" max="30" step="1" inputmode="numeric" aria-label="Quantidade de vagas na frente"> vagas de 2,5 m</span></label>
+        <label class="opcao"><input type="radio" name="ref" value="frente"><span>A frente mede <input type="number" id="refFrente" value="10" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da frente em metros"> m</span></label>
+        <label class="opcao"><input type="radio" name="ref" value="lado"><span>A lateral mede <input type="number" id="refLado" value="6" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da lateral em metros"> m</span></label>
+      </fieldset>
+    </div>
+
+    <div class="cartao destaque" id="cardMedida" hidden>
+      <h3>Medida estimada</h3>
+      <div class="medidas">
+        <div><span>Frente</span><strong id="mFrente">-</strong></div>
+        <div><span>Fundo</span><strong id="mFundo">-</strong></div>
+        <div><span>Área</span><strong id="mArea">-</strong></div>
+      </div>
+      <div class="chips" id="chipsCabe"></div>
+      <ul class="avisos" id="avisosMedida"></ul>
+    </div>
+    <p class="msg" id="msgMarcar" role="alert"></p>
+    <button id="btnContinuar" class="btn primario" disabled>Continuar</button>
+    <button id="btnOutraFoto" class="btn link">Usar outra foto</button>
+  </section>
+
+  <!-- 3. Dados -->
+  <section id="telaDados" class="tela" data-passo="3">
+    <p class="eyebrow">Passo 3 de 4</p>
+    <h2>Sobre o comércio</h2>
+    <p>A foto mostra o espaço. Estes dados dizem se o ponto vai ter uso e energia para se pagar.</p>
+    <div class="cartao">
+      <div class="campo">
+        <label for="selSegmento">Tipo de comércio</label>
+        <select id="selSegmento"></select>
+      </div>
+      <div class="campo">
+        <label for="selRegiao">Região</label>
+        <select id="selRegiao"></select>
+      </div>
+      <div class="campo">
+        <label for="rgFluxo">Pessoas por dia no comércio <span class="valor" id="vFluxo"></span></label>
+        <input type="range" id="rgFluxo" min="100" max="2000" step="50" value="600">
+      </div>
+    </div>
+    <div class="cartao">
+      <div class="campo" role="radiogroup" aria-labelledby="rotLigacao">
+        <label id="rotLigacao">Ligação elétrica</label>
+        <div class="segmentado" id="segLigacao">
+          <label><input type="radio" name="ligacao" value="mono"> Monofásica</label>
+          <label><input type="radio" name="ligacao" value="bi"> Bifásica</label>
+          <label><input type="radio" name="ligacao" value="tri" checked> Trifásica</label>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="selDisjuntor">Disjuntor geral do padrão de entrada <span class="valor" id="vCarga"></span></label>
+        <select id="selDisjuntor"></select>
+      </div>
+      <p class="nota">Está escrito no disjuntor do quadro do medidor. Se não souber, deixe o padrão: a homologação confere no local.</p>
+      <ul class="avisos" id="avisoMono" hidden><li>O carregador GoodWe GW7K trabalha em 220 V. Em ligação monofásica de 127 V ele precisa de uma segunda fase ou de um transformador.</li></ul>
+    </div>
+    <button id="btnResultado" class="btn primario">Ver resultado</button>
+    <button id="btnVoltarMarcar" class="btn link">Voltar</button>
+  </section>
+
+  <!-- 4. Resultado -->
+  <section id="telaResultado" class="tela" data-passo="4">
+    <p class="eyebrow">Passo 4 de 4 · Pré-análise</p>
+    <h2 id="tituloResultado">Seu Ponto W</h2>
+    <div class="foto">
+      <canvas id="cvProjecao" role="img" aria-label="Foto do local com o Ponto W desenhado sobre ela"></canvas>
+      <span class="selo" id="seloProjecao">Com o Ponto W</span>
+    </div>
+    <div class="antes-depois">
+      <span>Hoje</span>
+      <input type="range" id="rgAntesDepois" min="0" max="100" value="100" aria-label="Comparar antes e depois">
+      <span>Com o Ponto W</span>
+    </div>
+
+    <div class="formatos" role="tablist" id="abasFormato"></div>
+
+    <div class="cartao" id="cardCabe"></div>
+
+    <div class="cartao">
+      <h3>Viabilidade</h3>
+      <div class="viab">
+        <div class="anel">
+          <svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="none" stroke="#1b1f26" stroke-width="10"/><circle id="anelScore" cx="50" cy="50" r="42" fill="none" stroke="#e3262f" stroke-width="10" stroke-linecap="round" stroke-dasharray="0 264"/></svg>
+          <strong id="vScore">-</strong>
+        </div>
+        <div>
+          <span class="veredito" id="vVeredito"></span>
+          <p id="vParecer" style="margin:0"></p>
+        </div>
+      </div>
+      <div class="fatores" id="vFatores"></div>
+    </div>
+
+    <div class="cartao">
+      <h3>A conta da unidade</h3>
+      <div class="numeros" id="contaNumeros"></div>
+      <p class="nota" style="margin-top:10px">Premissas do modelo econômico do Ponto W: venda a R$ 1,90/kWh, energia à tarifa da região escolhida, 6,5 kW entregues por carregador, sessão de 1,5 h, metade dos motoristas entra na loja com ticket extra de R$ 28 (premissa) e margem de 35%. Royalties de 6%, fundo de 2% e meio de pagamento de 1,5% só sobre a recarga, mais a plataforma de R$ 180/mês (R$ 360 no Hub).</p>
+    </div>
+
+    <button id="btnEntrarVR" class="btn primario">Entrar no VR do meu Ponto W</button>
+    <button id="btnAjustar" class="btn">Ajustar a marcação</button>
+    <button id="btnRecomecar" class="btn link">Avaliar outro local</button>
+    <p class="nota">Pré-análise por foto, com erro típico de 10 a 15% na medida. A homologação do Ponto W (Taxa de Análise de Viabilidade, abatida da taxa de franquia se o ponto for aprovado) confere as medidas e a rede elétrica no local.</p>
+  </section>
+</div>
+
+<div id="vrHud">
+  <button id="btnSairVR" type="button">&larr; Voltar</button>
+  <span id="vrChip"></span>
+</div>
+
+<div id="vrAjuda" role="dialog" aria-modal="true" aria-labelledby="ajudaTitulo">
+  <div class="cartao">
+    <p class="eyebrow">Como navegar</p>
+    <h2 id="ajudaTitulo">Você está no seu Ponto W</h2>
+    <ul class="dicas">
+      <li><span class="n">1</span><span><b>Gire o celular</b> para olhar em volta. No computador, arraste com o mouse.</span></li>
+      <li><span class="n">2</span><span><b>Mire o círculo</b> num marcador por 1,5 s para interagir. O raio liga a recarga e o "i" mostra detalhes.</span></li>
+      <li><span class="n">3</span><span><b>Para andar</b>, mire num dos círculos do chão. Dá para entrar no café e na loja.</span></li>
+      <li><span class="n">4</span><span><b>No headset:</b> se aparecer o ícone de óculos no canto inferior direito, toque nele e encaixe o celular.</span></li>
+    </ul>
+    <button id="btnAjudaOk" class="btn primario">Entrar</button>
+  </div>
+</div>

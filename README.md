@@ -4,9 +4,9 @@ Ponto W em realidade virtual: o comerciante fotografa o estacionamento, a págin
 
 ## Como abrir
 
-Publicado via GitHub Pages. Abra o link no navegador do celular. Para o VR, toque no ícone de óculos no canto inferior direito e encaixe o aparelho no headset.
+Publicado via GitHub Pages. Abra o link no navegador do celular. Para o VR, se aparecer o ícone de óculos no canto inferior direito, toque nele e encaixe o aparelho no headset.
 
-Melhor experiência no Chrome para Android, que suporta WebXR e visão estéreo. No iPhone a página funciona em tela cheia acompanhando o giroscópio, mas sem a divisão estéreo.
+Melhor experiência no Chrome para Android com suporte a WebXR. Onde o ícone de óculos não aparece (como no iPhone), a cena funciona em tela cheia acompanhando o giroscópio.
 
 ## Avaliar um local
 
@@ -22,11 +22,11 @@ Também dá para ir direto ao Ponto W modelo em VR, sem foto. Para apresentar se
 
 - A área marcada é tratada como um retângulo no chão plano. Os 4 cantos dão a homografia entre o chão e a foto, e com a lente do celular ela vira a pose da câmera e a proporção entre frente e fundo.
 - A lente sai do EXIF da foto (focal equivalente a 35 mm). Sem EXIF, usa 26 mm, a câmera principal típica de celular.
-- A medida informada fixa a escala em metros. Se ela não bater com a foto (por exemplo, se implicar uma câmera a 5 m do chão), a página avisa.
-- Cada formato precisa de vagas de 2,5 x 5 m lado a lado na frente, mais 0,6 m na cabeceira para os pilares dos carregadores.
-- Viabilidade e conta usam as mesmas regras do sistema web (`gs_goodwe`, `analisarViabilidade`) e do modelo econômico (`modelo_economico.py`).
+- A medida informada fixa a escala em metros. Se ela não bater com a foto (por exemplo, se implicar uma câmera a 5 m do chão), a página avisa. Medidas absurdas (mais de 80 m de lado) são recusadas.
+- Cada formato precisa de vagas de 2,5 x 5 m lado a lado na frente, mais 0,6 m na cabeceira para os pilares dos carregadores. Até 5% acima ou abaixo disso aparece como "no limite".
+- Viabilidade e conta usam as mesmas regras do sistema web (`gs_goodwe`, `analisarViabilidade`) e do modelo econômico (`modelo_economico.py`), com a tarifa de energia da região escolhida.
 
-O erro típico é de 10 a 15%. Por isso o resultado aparece como pré-análise, e a homologação do ponto confere as medidas e a rede elétrica no local.
+A precisão depende da foto: com a medida da frente e a área bem visível, o fundo erra poucos por cento; só com a altura do celular, ou com a área muito longe, o erro passa de 10%. Por isso o resultado aparece como pré-análise, e a homologação do ponto confere as medidas e a rede elétrica no local.
 
 ## Como navegar no VR
 
@@ -36,9 +36,21 @@ O erro típico é de 10 a 15%. Por isso o resultado aparece como pré-análise, 
 
 ## Estrutura
 
-Tudo vive em `index.html`. O arquivo é autossuficiente: a biblioteca A-Frame 1.5 está embutida e nenhuma requisição externa é feita, então basta servir o arquivo em qualquer host com HTTPS. A cena VR só entra na página quando o VR é aberto, para não gastar bateria durante a análise.
+O site publicado é só o `index.html`, autossuficiente: a biblioteca A-Frame 1.5 está embutida e a página não busca nada fora (a consulta do polyfill de Cardboard ao `dpdb.webvr.rocks` é desligada no build). Basta servir o arquivo em qualquer host com HTTPS. A cena VR só entra na página quando o VR é aberto, para não gastar bateria durante a análise, e as peças estáticas com o mesmo material são juntadas numa malha só para aliviar o celular.
 
-O conteúdo é ASCII puro de propósito: a página é servida sem declaração de charset em alguns contextos, e acentos literais viram mojibake. Textos com acento usam escapes `\uXXXX` no JavaScript e entidades HTML no markup.
+O código legível fica em `fonte/` e o `index.html` é gerado a partir dele:
+
+```bash
+node montar.js
+```
+
+- `medicao.js`: medida pela foto, cabimento, viabilidade e conta (funções puras, testadas).
+- `modelos.js`, `texturas.js`, `otimizacao.js`: o eletroposto, a fachada e as texturas em canvas.
+- `projecao.js`: o Ponto W desenhado sobre a foto, a foto de exemplo e a capa.
+- `componentes.js`, `cena.html`: a cena VR em A-Frame.
+- `fluxo.js`, `telas.html`, `estilo.css`: as telas da avaliação.
+
+O `index.html` é ASCII puro de propósito: a página é servida sem declaração de charset em alguns contextos, e acentos literais viram mojibake. O `montar.js` troca os acentos por escapes `\uXXXX` no JavaScript e entidades HTML no markup, e recusa o build se sobrar algum caractere fora do ASCII.
 
 Toda a interface 3D (telas, cartões, letreiro, logo no chão) é desenhada em canvas, e cada textura precisa ser marcada como sRGB. Sem isso o gerenciamento de cor lava o contraste e as telas ficam ilegíveis.
 
@@ -48,4 +60,4 @@ Toda a interface 3D (telas, cartões, letreiro, logo no chão) é desenhada em c
 node teste/medicao.test.js
 ```
 
-Os testes geram fotos sintéticas com câmera conhecida e conferem se a medida volta certa, além de conferir a conta contra os números do modelo econômico.
+Os testes leem o código direto do `index.html`, geram fotos sintéticas com câmera conhecida (inclusive com o celular torto) e conferem se a medida volta certa, além de conferir a conta contra os números do modelo econômico.

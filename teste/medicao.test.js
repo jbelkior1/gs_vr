@@ -92,8 +92,29 @@ ok(mE.ok && mE.avisos.length > 0, 'referencia absurda gera aviso: ' + (mE.avisos
 // pontos invalidos
 ok(!PW.medir([[0, 0], [10, 10], [0, 10], [10, 0]], W, H, f, { tipo: 'frente', metros: 5 }).ok === false || true, 'laco cruzado e reordenado (nao quebra)');
 ok(PW.medir([[100, 100], [200, 100], [300, 100], [400, 100]], W, H, f, { tipo: 'frente', metros: 5 }).ok === false, 'pontos colineares sao rejeitados');
-var acima = PW.medir([[1000, 2900], [3000, 2900], [3600, 100], [400, 100]].map(function (p) { return p; }), W, H, f, { tipo: 'frente', metros: 10 });
-console.log('   area que vai alem do horizonte -> ok=' + acima.ok + (acima.erro ? ' (' + acima.erro + ')' : ''));
+// faixa de 2 px perto do horizonte: antes dava ~300 x 240 m sem aviso
+var fina = PW.medir([[700, 1500], [3300, 1500], [3100, 1498], [900, 1498]], W, H, f, { tipo: 'altura', metros: 1.5 });
+ok(!fina.ok, 'faixa fina perto do horizonte e recusada: ' + (fina.erro || '-'));
+
+// regressao: foto com a mao torta (roll) nao pode espelhar a ordem dos cantos.
+// Antes, ate 14% dessas fotos davam camera abaixo do chao ou fundo absurdo.
+(function () {
+  var s = 12345;
+  function rnd() { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; }
+  var falhas = 0, total = 0;
+  for (var i = 0; i < 400; i++) {
+    var Lx = 6 + rnd() * 10, Ly = 3 + rnd() * 4, h = 1.3 + rnd() * 0.4;
+    var cam = camera([Lx / 2 + (rnd() - 0.5) * 3, -(6 + rnd() * 8), h], (rnd() - 0.5) * 20, 8 + rnd() * 10, (rnd() - 0.5) * 16);
+    var pts = [[0, 0, 0], [Lx, 0, 0], [Lx, Ly, 0], [0, Ly, 0]].map(function (P) { return proj(cam, f, W, H, P); });
+    if (pts.some(function (p) { return p[0] < 0 || p[0] > W || p[1] < 0 || p[1] > H; })) continue;
+    total++;
+    var m = PW.medir(pts, W, H, f, { tipo: 'altura', metros: h });
+    var lados = m.ok ? [m.largura, m.profundidade].sort(function (a, b) { return a - b; }) : [];
+    var certo = [Lx, Ly].sort(function (a, b) { return a - b; });
+    if (!m.ok || Math.abs(lados[0] - certo[0]) > 1e-6 || Math.abs(lados[1] - certo[1]) > 1e-6) falhas++;
+  }
+  ok(total > 100 && falhas === 0, 'fotos com a mao torta (roll ate 8 graus): ' + falhas + ' falhas em ' + total);
+})();
 
 // cabimento
 ok(PW.cabimento('Hub', 12.5, 7).status === 'cabe', 'Hub cabe em 12,5 x 7');
