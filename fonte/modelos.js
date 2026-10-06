@@ -142,8 +142,11 @@ function construirCarro(op) {
 function construirEstacao(op) {
   var n = op.n, sx = op.largura, sy = op.profundidade;
   var VL = PW.VAGA_LARGURA, VC = PW.VAGA_COMPRIMENTO, FE = PW.FAIXA_EQUIPAMENTO;
-  /* vagas centradas na frente; se nao couber, o excesso aparece dos dois lados */
-  var x0 = (sx - n * VL) / 2;
+  /* posicao das vagas na frente: centro (padrao), esquerda ou direita.
+     Alinhar a um canto encaixa as vagas nas faixas que ja existem no chao.
+     Se nao couber, no centro o excesso aparece dos dois lados. */
+  var sobra = sx - n * VL;
+  var x0 = op.alinhamento === 'esquerda' ? 0 : (op.alinhamento === 'direita' ? sobra : sobra / 2);
   var zFundo = -sy;
   var zPilar = zFundo + FE / 2;
   var zVaga = zFundo + FE + VC / 2;
@@ -495,7 +498,7 @@ function construirMundo(config) {
 
   /* estacao: a area vai de z = 0 (cabeceira) a z = sy (frente) */
   var cfgCarros = n >= 4 ? [0, 2] : (n >= 2 ? [0, 1] : [0]);
-  var est = construirEstacao({ n: n, largura: sx, profundidade: sy, carros: cfgCarros, sombras: true });
+  var est = construirEstacao({ n: n, largura: sx, profundidade: sy, carros: cfgCarros, sombras: true, alinhamento: config.alinhamento });
   est.grupo.position.set(-sx / 2, 0, sy);
   g.add(est.grupo);
   function paraMundo(v) { return v.clone().add(est.grupo.position); }

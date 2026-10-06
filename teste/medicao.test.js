@@ -92,6 +92,25 @@ ok(mE.ok && mE.avisos.length > 0, 'referencia absurda gera aviso: ' + (mE.avisos
 // pontos invalidos
 ok(!PW.medir([[0, 0], [10, 10], [0, 10], [10, 0]], W, H, f, { tipo: 'frente', metros: 5 }).ok === false || true, 'laco cruzado e reordenado (nao quebra)');
 ok(PW.medir([[100, 100], [200, 100], [300, 100], [400, 100]], W, H, f, { tipo: 'frente', metros: 5 }).ok === false, 'pontos colineares sao rejeitados');
+// frente e lateral conhecidas: a lente sai da propria foto, mesmo com a
+// focal do EXIF errada (foto da 0,5x lida como 1x, por exemplo)
+(function () {
+  var fReal = PW.focalPixels(W, H, 15);
+  [[0, 18, 0], [12, 14, 3], [-10, 20, -4]].forEach(function (pose, i) {
+    var cam = camera([5, -6, 1.5], pose[0], pose[1], pose[2]);
+    var pts = [[0, 0, 0], [10, 0, 0], [10, 6, 0], [0, 6, 0]].map(function (P) {
+      var pc = cam.R0.map(function (row, k) { return row[0] * P[0] + row[1] * P[1] + row[2] * P[2] + cam.t[k]; });
+      return [W / 2 + fReal * pc[0] / pc[2], H / 2 + fReal * pc[1] / pc[2]];
+    });
+    var errada = PW.medir(pts, W, H, f, { tipo: 'frente', metros: 10 });
+    var m = PW.medir(pts, W, H, f, { tipo: 'ambos', frente: 10, lado: 6 });
+    var lados = [m.largura, m.profundidade].sort(function (a, b) { return a - b; });
+    ok(m.ok && perto(m.focalCalibrada, 15, 0.01) && perto(lados[0], 6, 1e-6) && perto(lados[1], 10, 1e-6) && perto(m.alturaCamera, 1.5, 1e-6),
+      'frente e lateral calibram a lente (caso ' + (i + 1) + '): ' + (m.focalCalibrada || 0).toFixed(2) + ' mm, camera ' + (m.alturaCamera || 0).toFixed(3) +
+      ' m (so com a frente e lente de 26 mm: fundo ' + errada.profundidade.toFixed(2) + ' m, camera ' + errada.alturaCamera.toFixed(2) + ' m)');
+  });
+})();
+
 // faixa de 2 px perto do horizonte: antes dava ~300 x 240 m sem aviso
 var fina = PW.medir([[700, 1500], [3300, 1500], [3100, 1498], [900, 1498]], W, H, f, { tipo: 'altura', metros: 1.5 });
 ok(!fina.ok, 'faixa fina perto do horizonte e recusada: ' + (fina.erro || '-'));

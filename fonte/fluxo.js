@@ -97,10 +97,22 @@ function prepararFoto(origem, w0, h0, focal35, fonte, pontos) {
   estado.medida = null;
   estado.renders = {};
   estado.formatoEscolhido = false;
+  estado.alinhamento = null;
   $('seloFonte').hidden = false;
-  $('seloFonte').textContent = focal35 ? 'Lente: ' + focal35 + ' mm' : 'Lente padrão (26 mm)';
+  $('seloFonte').textContent = rotuloLente(estado.foto);
   irPara('telaMarcar');
   recalcular();
+}
+
+function rotuloLente(F) {
+  if (F.fonte === 'exemplo') return 'Foto de exemplo';
+  return F.focal35 ? 'Lente: ' + F.focal35 + ' mm' : 'Lente padrão (26 mm)';
+}
+
+/* Posicao das vagas na frente. Sem escolha do usuario: se a medida veio das
+   vagas pintadas, alinha no canto esquerdo para coincidir com elas. */
+function alinhamentoAtual() {
+  return estado.alinhamento || (tipoRef() === 'vagas' ? 'esquerda' : 'centro');
 }
 
 function usarExemplo() {
@@ -108,7 +120,6 @@ function usarExemplo() {
   try { ex = gerarFotoExemplo(); } catch (err) { $('msgFoto').textContent = 'Seu navegador não conseguiu gerar a imagem 3D (WebGL).'; return; }
   marcarRef('frente', EXEMPLO.largura);
   prepararFoto(ex.canvas, ex.canvas.width, ex.canvas.height, ex.focal35, 'exemplo', ex.pontos);
-  $('seloFonte').textContent = 'Foto de exemplo';
 }
 
 /* ---------------------------------------------------------------- marcar */
@@ -180,27 +191,48 @@ function pontoDoEvento(e) {
   return [Math.max(0, Math.min(F.w, x)), Math.max(0, Math.min(F.h, y))];
 }
 
+/* Canto da marcacao sob o ponto (em pixels da foto), ou -1. Enquanto faltam
+   cantos, so pega se cair quase em cima: numa area distante eles ficam
+   proximos na foto e o toque tem de poder criar o canto seguinte. */
+function cantoSob(p) {
+  var esc = escalaTela(), melhor = -1;
+  var dmin = (estado.pontos.length < 4 ? 14 : 30) * esc;
+  estado.pontos.forEach(function (q, i) {
+    var d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d < dmin) { dmin = d; melhor = i; }
+  });
+  return melhor;
+}
+
+/* Toque na foto:
+   - em cima de um canto: arrasta o canto (a pagina nao rola);
+   - toque rapido fora dos cantos: cria um canto;
+   - arrastar fora dos cantos: rola a pagina normalmente (o navegador cuida). */
+var TOQUE_MAX = 10;  /* px de tela: acima disso foi rolagem, nao toque */
+var toque = null;
+
 function ligarMarcacao() {
   cvM = $('cvMarcar'); gM = cvM.getContext('2d');
+  /* touchstart nao passivo: so cancela a rolagem quando o dedo pega um canto */
+  cvM.addEventListener('touchstart', function (e) {
+    if (!estado.foto || e.touches.length !== 1) return;
+    if (cantoSob(pontoDoEvento(e.touches[0])) >= 0) e.preventDefault();
+  }, { passive: false });
   cvM.addEventListener('pointerdown', function (e) {
-    if (!estado.foto) return;
-    /* enquanto faltam cantos, so pega um ponto se o toque cair quase em cima
-       dele: numa area distante os cantos ficam proximos na foto */
-    var p = pontoDoEvento(e), esc = escalaTela(), melhor = -1;
-    var dmin = (estado.pontos.length < 4 ? 12 : 30) * esc;
-    estado.pontos.forEach(function (q, i) {
-      var d = Math.hypot(q[0] - p[0], q[1] - p[1]);
-      if (d < dmin) { dmin = d; melhor = i; }
-    });
-    if (melhor >= 0) arrasto = { i: melhor, dx: estado.pontos[melhor][0] - p[0], dy: estado.pontos[melhor][1] - p[1] };
-    else if (estado.pontos.length < 4) { estado.pontos.push(p); arrasto = { i: estado.pontos.length - 1, dx: 0, dy: 0 }; }
-    else return;
-    try { cvM.setPointerCapture(e.pointerId); } catch (err) { /* sem captura: segue sem ela */ }
-    lupa = estado.pontos[arrasto.i];
-    desenharMarcacao();
-    e.preventDefault();
+    if (!estado.foto || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    var p = pontoDoEvento(e), i = cantoSob(p);
+    if (i >= 0) {
+      arrasto = { i: i, dx: estado.pontos[i][0] - p[0], dy: estado.pontos[i][1] - p[1] };
+      try { cvM.setPointerCapture(e.pointerId); } catch (err) { /* sem captura: segue sem ela */ }
+      lupa = estado.pontos[i];
+      desenharMarcacao();
+      e.preventDefault();
+    } else {
+      toque = { id: e.pointerId, x: e.clientX, y: e.clientY, p: p };
+    }
   });
   cvM.addEventListener('pointermove', function (e) {
+    if (toque && toque.id === e.pointerId && Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > TOQUE_MAX) toque = null;
     if (!arrasto) return;
     var p = pontoDoEvento(e), F = estado.foto;
     var q = [Math.max(0, Math.min(F.w, p[0] + arrasto.dx)), Math.max(0, Math.min(F.h, p[1] + arrasto.dy))];
@@ -209,14 +241,22 @@ function ligarMarcacao() {
     desenharMarcacao();
     e.preventDefault();
   });
+  cvM.addEventListener('pointerup', function (e) {
+    if (arrasto) { soltar(); return; }
+    if (toque && toque.id === e.pointerId && estado.pontos.length < 4) {
+      estado.pontos.push(toque.p);
+      desenharMarcacao();
+      recalcular();
+    }
+    toque = null;
+  });
+  cvM.addEventListener('pointercancel', function () { toque = null; soltar(); });
   function soltar() {
     if (!arrasto) return;
     arrasto = null; lupa = null;
     desenharMarcacao();
     recalcular();
   }
-  cvM.addEventListener('pointerup', soltar);
-  cvM.addEventListener('pointercancel', soltar);
   window.addEventListener('resize', function () { if ($('telaMarcar').classList.contains('ativa')) desenharMarcacao(); });
 
   $('btnLimpar').onclick = function () { estado.pontos = []; estado.giro = 0; recalcular(); desenharMarcacao(); };
@@ -241,16 +281,24 @@ function marcarOpcoes() {
 function marcarRef(tipo, valor) {
   document.querySelectorAll('#fsRef input[type=radio]').forEach(function (r) { r.checked = r.value === tipo; });
   if (valor !== undefined) {
-    var campo = { altura: 'refAltura', vagas: 'refVagas', frente: 'refFrente', lado: 'refLado' }[tipo];
+    var campo = { altura: 'refAltura', vagas: 'refVagas', frente: 'refFrente', lado: 'refLado', ambos: 'refAmbosFrente' }[tipo];
     $(campo).value = valor;
   }
 }
 
+function tipoRef() {
+  return (document.querySelector('#fsRef input[type=radio]:checked') || {}).value || 'altura';
+}
+
 function lerRef() {
-  var tipo = (document.querySelector('#fsRef input[type=radio]:checked') || {}).value || 'altura';
+  var tipo = tipoRef();
   if (tipo === 'altura') return { tipo: 'altura', metros: numero('refAltura') };
   if (tipo === 'vagas') return { tipo: 'frente', metros: numero('refVagas') * PW.VAGA_LARGURA };
   if (tipo === 'frente') return { tipo: 'frente', metros: numero('refFrente') };
+  if (tipo === 'ambos') {
+    var fr = numero('refAmbosFrente'), la = numero('refAmbosLado');
+    return { tipo: 'ambos', frente: fr, lado: la, metros: Math.max(fr, la) <= 200 ? Math.min(fr, la) : NaN };
+  }
   return { tipo: 'lado', metros: numero('refLado') };
 }
 
@@ -300,7 +348,8 @@ function recalcular() {
   });
   var av = $('avisosMedida'); av.innerHTML = '';
   var avisos = m.avisos.slice();
-  if (!F.focal35) {
+  $('seloFonte').textContent = m.focalCalibrada ? 'Lente calibrada: ' + PW.fmt(m.focalCalibrada, 0) + ' mm' : rotuloLente(F);
+  if (!F.focal35 && !m.focalCalibrada) {
     avisos.push('A foto não trouxe os dados da lente, então usei a câmera 1x padrão (26 mm). Se ela foi tirada na 0,5x, a medida sai errada.');
   }
   avisos.forEach(function (a) { var li = document.createElement('li'); li.textContent = a; av.appendChild(li); });
@@ -446,12 +495,15 @@ function mostrarResultado() {
 function atualizarProjecao() {
   var m = estado.medida, F = estado.foto, cv = $('cvProjecao');
   if (!m || !F) return;
-  var r = estado.renders[estado.formato];
+  var alin = alinhamentoAtual(), chave = estado.formato + '|' + alin;
+  var r = estado.renders[chave];
   if (!r) {
-    try { r = renderizarEstacaoNaFoto(m, estado.formato, F.w, F.h); }
+    try { r = renderizarEstacaoNaFoto(m, estado.formato, F.w, F.h, alin); }
     catch (err) { r = novoCanvas(F.w, F.h); }
-    estado.renders[estado.formato] = r;
+    estado.renders[chave] = r;
   }
+  document.querySelectorAll('#segAlinhamento input').forEach(function (i) { i.checked = i.value === alin; });
+  marcarOpcoes();
   var div = Number($('rgAntesDepois').value) / 100;
   comporProjecao(cv, F.canvas, r, m, div);
   $('seloProjecao').textContent = div >= 1 ? 'Com o Ponto W' : (div <= 0 ? 'Hoje' : 'Com o Ponto W ← → Hoje');
@@ -528,13 +580,16 @@ function iniciar() {
   $('btnAjustar').onclick = function () { irPara('telaMarcar'); };
   $('btnRecomecar').onclick = function () { estado.foto = null; estado.pontos = []; irPara('telaFoto'); };
   $('rgAntesDepois').addEventListener('input', atualizarProjecao);
+  document.querySelectorAll('#segAlinhamento input').forEach(function (i) {
+    i.addEventListener('change', function () { estado.alinhamento = i.value; atualizarProjecao(); });
+  });
   $('btnEntrarVR').onclick = function () {
     var m = estado.medida, a = analisar(estado.formato);
     abrirVR({
       formato: estado.formato,
       largura: Math.min(30, Math.max(2.5, m.largura)),
       profundidade: Math.min(20, Math.max(PW.exigencia('Light').profundidade, m.profundidade)),
-      comArea: true, foto: estado.foto.canvas, resumo: resumoParaVR(a, 'local')
+      comArea: true, foto: estado.foto.canvas, resumo: resumoParaVR(a, 'local'), alinhamento: alinhamentoAtual()
     });
   };
   $('btnSairVR').onclick = sairVR;

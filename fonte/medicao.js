@@ -82,6 +82,18 @@ var PW = (function () {
     };
   }
 
+  /* Focal (em pixels) que faz o retangulo ter a proporcao frente/fundo = k.
+     Com K = diag(f, f, 1): |K^-1 h1|^2 = k^2 |K^-1 h2|^2 da
+     f^2 = (a^2 + d^2 - k^2 (b^2 + e^2)) / (k^2 h^2 - g^2).
+     Funciona quando o fundo aparece em perspectiva (h != 0), o caso normal
+     de quem fotografa em pe olhando o chao. */
+  function focalPelaProporcao(H, k) {
+    var num = H.a * H.a + H.d * H.d - k * k * (H.b * H.b + H.e * H.e);
+    var den = k * k * H.h * H.h - H.g * H.g;
+    var f2 = num / den;
+    return f2 > 0 && isFinite(f2) ? Math.sqrt(f2) : null;
+  }
+
   /* Mede a area marcada na foto.
      Supoe chao plano, area retangular, pixel quadrado e centro optico no
      centro da imagem. Com a focal conhecida, a homografia H ~ K [sx r1, sy r2, t]
@@ -90,6 +102,8 @@ var PW = (function () {
 
      pontos: 4 toques em pixels (qualquer ordem)
      ref: { tipo: 'frente' | 'lado' | 'altura', metros: numero }
+          ou { tipo: 'ambos', frente: numero, lado: numero }: com os dois lados
+          conhecidos a lente sai da propria foto (focal calibrada)
      giro: 0..3, troca qual lado e a frente (por onde os carros entram)
      retorna { ok, largura, profundidade, alturaCamera, R, t, f, cantos, avisos } */
   function medir(pontos, larguraPx, alturaPx, focalPx, ref, giro) {
@@ -99,6 +113,16 @@ var PW = (function () {
 
     var cx = larguraPx / 2, cy = alturaPx / 2, f = focalPx;
     var H = homografiaQuadrado(cantos.map(function (p) { return [p[0] - cx, p[1] - cy]; }));
+
+    var focalCalibrada = null, avisoLente = null;
+    if (ref.tipo === 'ambos') {
+      var fc = focalPelaProporcao(H, ref.frente / ref.lado);
+      var diag = Math.sqrt(larguraPx * larguraPx + alturaPx * alturaPx);
+      var mm = fc ? fc * DIAG_35MM / diag : 0;
+      if (mm >= 10 && mm <= 120) { f = fc; focalCalibrada = mm; }
+      else avisoLente = 'Não deu para calibrar a lente com essas medidas nesta foto; usei a lente da foto. Confira as duas medidas e os cantos.';
+      ref = { tipo: 'frente', metros: ref.frente };
+    }
 
     var a1 = [H.a / f, H.d / f, H.g];
     var a2 = [H.b / f, H.e / f, H.h];
@@ -133,6 +157,7 @@ var PW = (function () {
     }
 
     var avisos = [];
+    if (avisoLente) avisos.push(avisoLente);
     /* faixa fina na foto: poucos pixels de fundo, erro de toque pesa muito */
     var ys = cantos.map(function (p) { return p[1]; });
     if (Math.max.apply(null, ys) - Math.min.apply(null, ys) < alturaPx * 0.06) {
@@ -156,6 +181,7 @@ var PW = (function () {
       R: [r1, r2, r3],
       t: t,
       f: f,
+      focalCalibrada: focalCalibrada,
       cx: cx,
       cy: cy,
       cantos: cantos,

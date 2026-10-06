@@ -107,7 +107,8 @@ p.lead { font-size: 16px; color: #d3d9df; }
   position: relative; border-radius: var(--raio); overflow: hidden; background: #000;
   border: 1px solid var(--linha); margin: 8px 0 12px;
 }
-.foto canvas { width: 100%; height: auto; display: block; touch-action: none; }
+/* a foto deixa rolar a pagina; a marcacao so trava a rolagem quando o dedo pega um canto (fluxo.js) */
+.foto canvas { width: 100%; height: auto; display: block; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .foto .selo {
   position: absolute; left: 10px; top: 10px; padding: 5px 10px; border-radius: 999px;
   background: rgba(0, 0, 0, 0.62); font-size: 12.5px; font-weight: 650; color: #fff;
@@ -304,6 +305,7 @@ body.em-vr #vrHud { display: flex; }
         <label class="opcao"><input type="radio" name="ref" value="vagas"><span>A frente tem <input type="number" id="refVagas" value="3" min="1" max="30" step="1" inputmode="numeric" aria-label="Quantidade de vagas na frente"> vagas de 2,5 m</span></label>
         <label class="opcao"><input type="radio" name="ref" value="frente"><span>A frente mede <input type="number" id="refFrente" value="10" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da frente em metros"> m</span></label>
         <label class="opcao"><input type="radio" name="ref" value="lado"><span>A lateral mede <input type="number" id="refLado" value="6" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da lateral em metros"> m</span></label>
+        <label class="opcao"><input type="radio" name="ref" value="ambos"><span>Sei as duas: frente <input type="number" id="refAmbosFrente" value="10" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Frente em metros"> m e lateral <input type="number" id="refAmbosLado" value="6" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Lateral em metros"> m<small>A mais precisa: calibra a lente pela pr&#xF3;pria foto e o carro encaixa melhor.</small></span></label>
       </fieldset>
     </div>
 
@@ -373,6 +375,16 @@ body.em-vr #vrHud { display: flex; }
       <span>Hoje</span>
       <input type="range" id="rgAntesDepois" min="0" max="100" value="100" aria-label="Comparar antes e depois">
       <span>Com o Ponto W</span>
+    </div>
+
+    <div class="campo" role="radiogroup" aria-labelledby="rotAlinhamento">
+      <label id="rotAlinhamento">Posi&#xE7;&#xE3;o das vagas na frente</label>
+      <div class="segmentado" id="segAlinhamento">
+        <label><input type="radio" name="alinhamento" value="esquerda"> Esquerda</label>
+        <label><input type="radio" name="alinhamento" value="centro" checked> Centro</label>
+        <label><input type="radio" name="alinhamento" value="direita"> Direita</label>
+      </div>
+      <p class="nota" style="margin:6px 0 0">Se o ch&#xE3;o j&#xE1; tem vagas pintadas, encoste as do Ponto W no canto onde elas come&#xE7;am.</p>
     </div>
 
     <div class="formatos" role="tablist" id="abasFormato"></div>
@@ -512,6 +524,18 @@ var PW = (function () {
     };
   }
 
+  /* Focal (em pixels) que faz o retangulo ter a proporcao frente/fundo = k.
+     Com K = diag(f, f, 1): |K^-1 h1|^2 = k^2 |K^-1 h2|^2 da
+     f^2 = (a^2 + d^2 - k^2 (b^2 + e^2)) / (k^2 h^2 - g^2).
+     Funciona quando o fundo aparece em perspectiva (h != 0), o caso normal
+     de quem fotografa em pe olhando o chao. */
+  function focalPelaProporcao(H, k) {
+    var num = H.a * H.a + H.d * H.d - k * k * (H.b * H.b + H.e * H.e);
+    var den = k * k * H.h * H.h - H.g * H.g;
+    var f2 = num / den;
+    return f2 > 0 && isFinite(f2) ? Math.sqrt(f2) : null;
+  }
+
   /* Mede a area marcada na foto.
      Supoe chao plano, area retangular, pixel quadrado e centro optico no
      centro da imagem. Com a focal conhecida, a homografia H ~ K [sx r1, sy r2, t]
@@ -520,6 +544,8 @@ var PW = (function () {
 
      pontos: 4 toques em pixels (qualquer ordem)
      ref: { tipo: 'frente' | 'lado' | 'altura', metros: numero }
+          ou { tipo: 'ambos', frente: numero, lado: numero }: com os dois lados
+          conhecidos a lente sai da propria foto (focal calibrada)
      giro: 0..3, troca qual lado e a frente (por onde os carros entram)
      retorna { ok, largura, profundidade, alturaCamera, R, t, f, cantos, avisos } */
   function medir(pontos, larguraPx, alturaPx, focalPx, ref, giro) {
@@ -529,6 +555,16 @@ var PW = (function () {
 
     var cx = larguraPx / 2, cy = alturaPx / 2, f = focalPx;
     var H = homografiaQuadrado(cantos.map(function (p) { return [p[0] - cx, p[1] - cy]; }));
+
+    var focalCalibrada = null, avisoLente = null;
+    if (ref.tipo === 'ambos') {
+      var fc = focalPelaProporcao(H, ref.frente / ref.lado);
+      var diag = Math.sqrt(larguraPx * larguraPx + alturaPx * alturaPx);
+      var mm = fc ? fc * DIAG_35MM / diag : 0;
+      if (mm >= 10 && mm <= 120) { f = fc; focalCalibrada = mm; }
+      else avisoLente = 'N\u00e3o deu para calibrar a lente com essas medidas nesta foto; usei a lente da foto. Confira as duas medidas e os cantos.';
+      ref = { tipo: 'frente', metros: ref.frente };
+    }
 
     var a1 = [H.a / f, H.d / f, H.g];
     var a2 = [H.b / f, H.e / f, H.h];
@@ -563,6 +599,7 @@ var PW = (function () {
     }
 
     var avisos = [];
+    if (avisoLente) avisos.push(avisoLente);
     /* faixa fina na foto: poucos pixels de fundo, erro de toque pesa muito */
     var ys = cantos.map(function (p) { return p[1]; });
     if (Math.max.apply(null, ys) - Math.min.apply(null, ys) < alturaPx * 0.06) {
@@ -586,6 +623,7 @@ var PW = (function () {
       R: [r1, r2, r3],
       t: t,
       f: f,
+      focalCalibrada: focalCalibrada,
       cx: cx,
       cy: cy,
       cantos: cantos,
@@ -1266,8 +1304,11 @@ function construirCarro(op) {
 function construirEstacao(op) {
   var n = op.n, sx = op.largura, sy = op.profundidade;
   var VL = PW.VAGA_LARGURA, VC = PW.VAGA_COMPRIMENTO, FE = PW.FAIXA_EQUIPAMENTO;
-  /* vagas centradas na frente; se nao couber, o excesso aparece dos dois lados */
-  var x0 = (sx - n * VL) / 2;
+  /* posicao das vagas na frente: centro (padrao), esquerda ou direita.
+     Alinhar a um canto encaixa as vagas nas faixas que ja existem no chao.
+     Se nao couber, no centro o excesso aparece dos dois lados. */
+  var sobra = sx - n * VL;
+  var x0 = op.alinhamento === 'esquerda' ? 0 : (op.alinhamento === 'direita' ? sobra : sobra / 2);
   var zFundo = -sy;
   var zPilar = zFundo + FE / 2;
   var zVaga = zFundo + FE + VC / 2;
@@ -1619,7 +1660,7 @@ function construirMundo(config) {
 
   /* estacao: a area vai de z = 0 (cabeceira) a z = sy (frente) */
   var cfgCarros = n >= 4 ? [0, 2] : (n >= 2 ? [0, 1] : [0]);
-  var est = construirEstacao({ n: n, largura: sx, profundidade: sy, carros: cfgCarros, sombras: true });
+  var est = construirEstacao({ n: n, largura: sx, profundidade: sy, carros: cfgCarros, sombras: true, alinhamento: config.alinhamento });
   est.grupo.position.set(-sx / 2, 0, sy);
   g.add(est.grupo);
   function paraMundo(v) { return v.clone().add(est.grupo.position); }
@@ -1811,7 +1852,7 @@ function cameraDaFoto(m, w, h) {
 }
 
 /* Renderiza so o eletroposto, com fundo transparente, do ponto de vista da foto */
-function renderizarEstacaoNaFoto(m, formato, w, h) {
+function renderizarEstacaoNaFoto(m, formato, w, h, alinhamento) {
   var cena = new THREE.Scene();
   cena.add(new THREE.HemisphereLight('#eef2f8', '#55524c', 1.0));
   var sol = new THREE.DirectionalLight('#ffffff', 0.75);
@@ -1820,7 +1861,7 @@ function renderizarEstacaoNaFoto(m, formato, w, h) {
   cena.add(sol); cena.add(sol.target);
   var est = construirEstacao({
     n: PW.FORMATOS[formato].carregadores, largura: m.largura, profundidade: m.profundidade,
-    carros: [0], paraFoto: true
+    carros: [0], paraFoto: true, alinhamento: alinhamento
   });
   cena.add(est.grupo);
   var r = rendererForaDaTela(w, h);
@@ -2649,10 +2690,22 @@ function prepararFoto(origem, w0, h0, focal35, fonte, pontos) {
   estado.medida = null;
   estado.renders = {};
   estado.formatoEscolhido = false;
+  estado.alinhamento = null;
   $('seloFonte').hidden = false;
-  $('seloFonte').textContent = focal35 ? 'Lente: ' + focal35 + ' mm' : 'Lente padr\u00e3o (26 mm)';
+  $('seloFonte').textContent = rotuloLente(estado.foto);
   irPara('telaMarcar');
   recalcular();
+}
+
+function rotuloLente(F) {
+  if (F.fonte === 'exemplo') return 'Foto de exemplo';
+  return F.focal35 ? 'Lente: ' + F.focal35 + ' mm' : 'Lente padr\u00e3o (26 mm)';
+}
+
+/* Posicao das vagas na frente. Sem escolha do usuario: se a medida veio das
+   vagas pintadas, alinha no canto esquerdo para coincidir com elas. */
+function alinhamentoAtual() {
+  return estado.alinhamento || (tipoRef() === 'vagas' ? 'esquerda' : 'centro');
 }
 
 function usarExemplo() {
@@ -2660,7 +2713,6 @@ function usarExemplo() {
   try { ex = gerarFotoExemplo(); } catch (err) { $('msgFoto').textContent = 'Seu navegador n\u00e3o conseguiu gerar a imagem 3D (WebGL).'; return; }
   marcarRef('frente', EXEMPLO.largura);
   prepararFoto(ex.canvas, ex.canvas.width, ex.canvas.height, ex.focal35, 'exemplo', ex.pontos);
-  $('seloFonte').textContent = 'Foto de exemplo';
 }
 
 /* ---------------------------------------------------------------- marcar */
@@ -2732,27 +2784,48 @@ function pontoDoEvento(e) {
   return [Math.max(0, Math.min(F.w, x)), Math.max(0, Math.min(F.h, y))];
 }
 
+/* Canto da marcacao sob o ponto (em pixels da foto), ou -1. Enquanto faltam
+   cantos, so pega se cair quase em cima: numa area distante eles ficam
+   proximos na foto e o toque tem de poder criar o canto seguinte. */
+function cantoSob(p) {
+  var esc = escalaTela(), melhor = -1;
+  var dmin = (estado.pontos.length < 4 ? 14 : 30) * esc;
+  estado.pontos.forEach(function (q, i) {
+    var d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d < dmin) { dmin = d; melhor = i; }
+  });
+  return melhor;
+}
+
+/* Toque na foto:
+   - em cima de um canto: arrasta o canto (a pagina nao rola);
+   - toque rapido fora dos cantos: cria um canto;
+   - arrastar fora dos cantos: rola a pagina normalmente (o navegador cuida). */
+var TOQUE_MAX = 10;  /* px de tela: acima disso foi rolagem, nao toque */
+var toque = null;
+
 function ligarMarcacao() {
   cvM = $('cvMarcar'); gM = cvM.getContext('2d');
+  /* touchstart nao passivo: so cancela a rolagem quando o dedo pega um canto */
+  cvM.addEventListener('touchstart', function (e) {
+    if (!estado.foto || e.touches.length !== 1) return;
+    if (cantoSob(pontoDoEvento(e.touches[0])) >= 0) e.preventDefault();
+  }, { passive: false });
   cvM.addEventListener('pointerdown', function (e) {
-    if (!estado.foto) return;
-    /* enquanto faltam cantos, so pega um ponto se o toque cair quase em cima
-       dele: numa area distante os cantos ficam proximos na foto */
-    var p = pontoDoEvento(e), esc = escalaTela(), melhor = -1;
-    var dmin = (estado.pontos.length < 4 ? 12 : 30) * esc;
-    estado.pontos.forEach(function (q, i) {
-      var d = Math.hypot(q[0] - p[0], q[1] - p[1]);
-      if (d < dmin) { dmin = d; melhor = i; }
-    });
-    if (melhor >= 0) arrasto = { i: melhor, dx: estado.pontos[melhor][0] - p[0], dy: estado.pontos[melhor][1] - p[1] };
-    else if (estado.pontos.length < 4) { estado.pontos.push(p); arrasto = { i: estado.pontos.length - 1, dx: 0, dy: 0 }; }
-    else return;
-    try { cvM.setPointerCapture(e.pointerId); } catch (err) { /* sem captura: segue sem ela */ }
-    lupa = estado.pontos[arrasto.i];
-    desenharMarcacao();
-    e.preventDefault();
+    if (!estado.foto || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    var p = pontoDoEvento(e), i = cantoSob(p);
+    if (i >= 0) {
+      arrasto = { i: i, dx: estado.pontos[i][0] - p[0], dy: estado.pontos[i][1] - p[1] };
+      try { cvM.setPointerCapture(e.pointerId); } catch (err) { /* sem captura: segue sem ela */ }
+      lupa = estado.pontos[i];
+      desenharMarcacao();
+      e.preventDefault();
+    } else {
+      toque = { id: e.pointerId, x: e.clientX, y: e.clientY, p: p };
+    }
   });
   cvM.addEventListener('pointermove', function (e) {
+    if (toque && toque.id === e.pointerId && Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > TOQUE_MAX) toque = null;
     if (!arrasto) return;
     var p = pontoDoEvento(e), F = estado.foto;
     var q = [Math.max(0, Math.min(F.w, p[0] + arrasto.dx)), Math.max(0, Math.min(F.h, p[1] + arrasto.dy))];
@@ -2761,14 +2834,22 @@ function ligarMarcacao() {
     desenharMarcacao();
     e.preventDefault();
   });
+  cvM.addEventListener('pointerup', function (e) {
+    if (arrasto) { soltar(); return; }
+    if (toque && toque.id === e.pointerId && estado.pontos.length < 4) {
+      estado.pontos.push(toque.p);
+      desenharMarcacao();
+      recalcular();
+    }
+    toque = null;
+  });
+  cvM.addEventListener('pointercancel', function () { toque = null; soltar(); });
   function soltar() {
     if (!arrasto) return;
     arrasto = null; lupa = null;
     desenharMarcacao();
     recalcular();
   }
-  cvM.addEventListener('pointerup', soltar);
-  cvM.addEventListener('pointercancel', soltar);
   window.addEventListener('resize', function () { if ($('telaMarcar').classList.contains('ativa')) desenharMarcacao(); });
 
   $('btnLimpar').onclick = function () { estado.pontos = []; estado.giro = 0; recalcular(); desenharMarcacao(); };
@@ -2793,16 +2874,24 @@ function marcarOpcoes() {
 function marcarRef(tipo, valor) {
   document.querySelectorAll('#fsRef input[type=radio]').forEach(function (r) { r.checked = r.value === tipo; });
   if (valor !== undefined) {
-    var campo = { altura: 'refAltura', vagas: 'refVagas', frente: 'refFrente', lado: 'refLado' }[tipo];
+    var campo = { altura: 'refAltura', vagas: 'refVagas', frente: 'refFrente', lado: 'refLado', ambos: 'refAmbosFrente' }[tipo];
     $(campo).value = valor;
   }
 }
 
+function tipoRef() {
+  return (document.querySelector('#fsRef input[type=radio]:checked') || {}).value || 'altura';
+}
+
 function lerRef() {
-  var tipo = (document.querySelector('#fsRef input[type=radio]:checked') || {}).value || 'altura';
+  var tipo = tipoRef();
   if (tipo === 'altura') return { tipo: 'altura', metros: numero('refAltura') };
   if (tipo === 'vagas') return { tipo: 'frente', metros: numero('refVagas') * PW.VAGA_LARGURA };
   if (tipo === 'frente') return { tipo: 'frente', metros: numero('refFrente') };
+  if (tipo === 'ambos') {
+    var fr = numero('refAmbosFrente'), la = numero('refAmbosLado');
+    return { tipo: 'ambos', frente: fr, lado: la, metros: Math.max(fr, la) <= 200 ? Math.min(fr, la) : NaN };
+  }
   return { tipo: 'lado', metros: numero('refLado') };
 }
 
@@ -2852,7 +2941,8 @@ function recalcular() {
   });
   var av = $('avisosMedida'); av.innerHTML = '';
   var avisos = m.avisos.slice();
-  if (!F.focal35) {
+  $('seloFonte').textContent = m.focalCalibrada ? 'Lente calibrada: ' + PW.fmt(m.focalCalibrada, 0) + ' mm' : rotuloLente(F);
+  if (!F.focal35 && !m.focalCalibrada) {
     avisos.push('A foto n\u00e3o trouxe os dados da lente, ent\u00e3o usei a c\u00e2mera 1x padr\u00e3o (26 mm). Se ela foi tirada na 0,5x, a medida sai errada.');
   }
   avisos.forEach(function (a) { var li = document.createElement('li'); li.textContent = a; av.appendChild(li); });
@@ -2998,12 +3088,15 @@ function mostrarResultado() {
 function atualizarProjecao() {
   var m = estado.medida, F = estado.foto, cv = $('cvProjecao');
   if (!m || !F) return;
-  var r = estado.renders[estado.formato];
+  var alin = alinhamentoAtual(), chave = estado.formato + '|' + alin;
+  var r = estado.renders[chave];
   if (!r) {
-    try { r = renderizarEstacaoNaFoto(m, estado.formato, F.w, F.h); }
+    try { r = renderizarEstacaoNaFoto(m, estado.formato, F.w, F.h, alin); }
     catch (err) { r = novoCanvas(F.w, F.h); }
-    estado.renders[estado.formato] = r;
+    estado.renders[chave] = r;
   }
+  document.querySelectorAll('#segAlinhamento input').forEach(function (i) { i.checked = i.value === alin; });
+  marcarOpcoes();
   var div = Number($('rgAntesDepois').value) / 100;
   comporProjecao(cv, F.canvas, r, m, div);
   $('seloProjecao').textContent = div >= 1 ? 'Com o Ponto W' : (div <= 0 ? 'Hoje' : 'Com o Ponto W \u2190 \u2192 Hoje');
@@ -3080,13 +3173,16 @@ function iniciar() {
   $('btnAjustar').onclick = function () { irPara('telaMarcar'); };
   $('btnRecomecar').onclick = function () { estado.foto = null; estado.pontos = []; irPara('telaFoto'); };
   $('rgAntesDepois').addEventListener('input', atualizarProjecao);
+  document.querySelectorAll('#segAlinhamento input').forEach(function (i) {
+    i.addEventListener('change', function () { estado.alinhamento = i.value; atualizarProjecao(); });
+  });
   $('btnEntrarVR').onclick = function () {
     var m = estado.medida, a = analisar(estado.formato);
     abrirVR({
       formato: estado.formato,
       largura: Math.min(30, Math.max(2.5, m.largura)),
       profundidade: Math.min(20, Math.max(PW.exigencia('Light').profundidade, m.profundidade)),
-      comArea: true, foto: estado.foto.canvas, resumo: resumoParaVR(a, 'local')
+      comArea: true, foto: estado.foto.canvas, resumo: resumoParaVR(a, 'local'), alinhamento: alinhamentoAtual()
     });
   };
   $('btnSairVR').onclick = sairVR;
