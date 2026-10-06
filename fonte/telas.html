@@ -55,6 +55,7 @@
         <label class="opcao"><input type="radio" name="ref" value="vagas"><span>A frente tem <input type="number" id="refVagas" value="3" min="1" max="30" step="1" inputmode="numeric" aria-label="Quantidade de vagas na frente"> vagas de 2,5 m</span></label>
         <label class="opcao"><input type="radio" name="ref" value="frente"><span>A frente mede <input type="number" id="refFrente" value="10" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da frente em metros"> m</span></label>
         <label class="opcao"><input type="radio" name="ref" value="lado"><span>A lateral mede <input type="number" id="refLado" value="6" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Medida da lateral em metros"> m</span></label>
+        <label class="opcao"><input type="radio" name="ref" value="ambos"><span>Sei as duas: frente <input type="number" id="refAmbosFrente" value="10" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Frente em metros"> m e lateral <input type="number" id="refAmbosLado" value="6" min="1" max="200" step="0.1" inputmode="decimal" aria-label="Lateral em metros"> m<small>A mais precisa: calibra a lente pela própria foto e o carro encaixa melhor.</small></span></label>
       </fieldset>
     </div>
 
@@ -124,6 +125,16 @@
       <span>Hoje</span>
       <input type="range" id="rgAntesDepois" min="0" max="100" value="100" aria-label="Comparar antes e depois">
       <span>Com o Ponto W</span>
+    </div>
+
+    <div class="campo" role="radiogroup" aria-labelledby="rotAlinhamento">
+      <label id="rotAlinhamento">Posição das vagas na frente</label>
+      <div class="segmentado" id="segAlinhamento">
+        <label><input type="radio" name="alinhamento" value="esquerda"> Esquerda</label>
+        <label><input type="radio" name="alinhamento" value="centro" checked> Centro</label>
+        <label><input type="radio" name="alinhamento" value="direita"> Direita</label>
+      </div>
+      <p class="nota" style="margin:6px 0 0">Se o chão já tem vagas pintadas, encoste as do Ponto W no canto onde elas começam.</p>
     </div>
 
     <div class="formatos" role="tablist" id="abasFormato"></div>

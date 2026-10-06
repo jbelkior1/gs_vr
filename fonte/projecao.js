@@ -46,7 +46,7 @@ function cameraDaFoto(m, w, h) {
 }
 
 /* Renderiza so o eletroposto, com fundo transparente, do ponto de vista da foto */
-function renderizarEstacaoNaFoto(m, formato, w, h) {
+function renderizarEstacaoNaFoto(m, formato, w, h, alinhamento) {
   var cena = new THREE.Scene();
   cena.add(new THREE.HemisphereLight('#eef2f8', '#55524c', 1.0));
   var sol = new THREE.DirectionalLight('#ffffff', 0.75);
@@ -55,7 +55,7 @@ function renderizarEstacaoNaFoto(m, formato, w, h) {
   cena.add(sol); cena.add(sol.target);
   var est = construirEstacao({
     n: PW.FORMATOS[formato].carregadores, largura: m.largura, profundidade: m.profundidade,
-    carros: [0], paraFoto: true
+    carros: [0], paraFoto: true, alinhamento: alinhamento
   });
   cena.add(est.grupo);
   var r = rendererForaDaTela(w, h);
