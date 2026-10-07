@@ -524,16 +524,43 @@ function resumoParaVR(a, origem) {
   };
 }
 
+/* Compila os shaders da cena em paralelo (KHR_parallel_shader_compile) com o
+   desenho parado, e so depois libera o loop. Sem isso o primeiro quadro
+   compila tudo de uma vez e a tela congela por segundos. */
+function prepararCena(cena) {
+  var r = cena.renderer;
+  r.setAnimationLoop(null);
+  botaoEntrar(false);
+  var pronto = function () {
+    /* um quadro de aquecimento envia texturas e geometrias para a GPU ainda
+       com o cartao "Como navegar" na tela */
+    try { r.render(cena.object3D, cena.camera); } catch (err) { /* o loop desenha depois */ }
+    r.setAnimationLoop(cena.render);
+    botaoEntrar(true);
+  };
+  if (r.compileAsync && cena.camera) r.compileAsync(cena.object3D, cena.camera).then(pronto, pronto);
+  else pronto();
+}
+
+function botaoEntrar(liberado) {
+  var b = $('btnAjudaOk');
+  b.disabled = !liberado;
+  b.textContent = liberado ? 'Entrar' : 'Preparando a cena…';
+  $('vrChip').classList.toggle('carregando', !liberado);
+}
+
 function abrirVR(cfg) {
   window.PW_CONFIG = cfg;
   var cena = document.querySelector('a-scene');
   if (!cena) {
     document.body.appendChild($('tplCena').content.cloneNode(true));
+    cena = document.querySelector('a-scene');
+    cena.addEventListener('renderstart', function () { prepararCena(cena); }, { once: true });
   } else {
     var mundo = cena.querySelector('[pw-cena]');
     mundo.components['pw-cena'].montar(cfg);
-    if (cena.renderer) cena.renderer.setAnimationLoop(cena.render);
     cena.play();
+    if (cena.renderer) prepararCena(cena);
     var som = cena.components.sfx;
     if (som && som.ctx && som.ctx.state === 'suspended') som.ctx.resume();
   }
@@ -595,10 +622,12 @@ function iniciar() {
   $('btnSairVR').onclick = sairVR;
   $('btnAjudaOk').onclick = function () { $('vrAjuda').classList.remove('aberta'); };
 
-  requestAnimationFrame(function () {
-    try { renderizarCapa($('cvHeroi')); }
-    catch (err) { $('cvHeroi').parentNode.hidden = true; }
-  });
+  /* capa compilada em paralelo: a tela inicial aparece na hora e a imagem entra quando fica pronta */
+  setTimeout(function () {
+    var esconder = function () { $('cvHeroi').parentNode.hidden = true; };
+    try { renderizarCapa($('cvHeroi')).then(function () { $('cvHeroi').classList.add('pronto'); }, esconder); }
+    catch (err) { esconder(); }
+  }, 0);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

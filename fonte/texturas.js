@@ -344,6 +344,110 @@ function texSombra() {
   });
 }
 
+/* ---------------------------------------------------------------- carro
+   As cores ficam no material (pintura); estes mapas so escurecem o que nao
+   e lataria: vidros, frisos, macanetas e plasticos. Branco = cor do carro. */
+
+/* Lateral do carro em coordenadas do perfil: u = s (comprimento), v = h (altura) */
+function texLateralCarro(P) {
+  var a = P.L / 4.05, b = P.b, R = P.raio + 0.12;
+  var LEN = 4.3 * a, OX = 0.15 * a, ALT = 1.8 * b;
+  var W = 1024, H = 512, c = novoCanvas(W, H), g = c.getContext('2d');
+  function X(s) { return (s * a + OX) / LEN * W; }          /* s no perfil base */
+  function Xm(s) { return (s + OX) / LEN * W; }             /* s em metros */
+  function Y(h) { return (1 - h * b / ALT) * H; }           /* h no perfil base */
+  var m = W / LEN;                                           /* pixels por metro */
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+
+  /* plasticos escuros embaixo e nos arcos de roda */
+  g.fillStyle = '#1b1d20'; g.fillRect(0, Y(0.41), W, H - Y(0.41));
+  g.strokeStyle = '#1b1d20'; g.lineWidth = 0.08 * m;
+  P.rodas.forEach(function (r) {
+    g.beginPath(); g.arc(X(r), Y(0.30), (R + 0.03) * m, Math.PI, 0, false); g.stroke();
+  });
+
+  /* vidros laterais com reflexo */
+  g.beginPath();
+  g.moveTo(X(0.32), Y(1.04));
+  g.quadraticCurveTo(X(0.44), Y(1.36), X(0.88), Y(1.42));
+  g.quadraticCurveTo(X(1.45), Y(1.49), X(2.08), Y(1.42));
+  g.quadraticCurveTo(X(2.50), Y(1.28), X(2.80), Y(1.04));
+  g.closePath();
+  var vg = g.createLinearGradient(0, Y(1.46), 0, Y(1.04));
+  vg.addColorStop(0, '#26303b'); vg.addColorStop(1, '#07090c');
+  g.fillStyle = vg; g.fill();
+  g.lineWidth = 0.035 * m; g.strokeStyle = '#0d0f12'; g.stroke();
+  g.save(); g.clip();
+  g.fillStyle = 'rgba(255,255,255,0.07)';
+  g.beginPath(); g.moveTo(X(1.1), Y(1.6)); g.lineTo(X(1.6), Y(1.6)); g.lineTo(X(1.2), Y(0.95)); g.lineTo(X(0.7), Y(0.95)); g.fill();
+  g.restore();
+  /* colunas B e C (pretas) */
+  g.fillStyle = '#0d0f12';
+  g.fillRect(X(1.80), Y(1.47), 0.07 * m, Y(1.04) - Y(1.47));
+  g.fillRect(X(0.95), Y(1.44), 0.05 * m, Y(1.04) - Y(1.44));
+
+  /* recortes das portas, macanetas e friso */
+  g.strokeStyle = '#7d8389'; g.lineWidth = 0.012 * m;
+  g.beginPath();
+  g.moveTo(X(0.98), Y(1.02)); g.lineTo(X(0.98), Y(0.62)); g.quadraticCurveTo(X(1.02), Y(0.44), X(1.25), Y(0.43));
+  g.moveTo(X(1.84), Y(1.02)); g.lineTo(X(1.84), Y(0.43));
+  g.moveTo(X(2.84), Y(1.0)); g.lineTo(X(2.88), Y(0.62)); g.quadraticCurveTo(X(2.86), Y(0.45), X(2.72), Y(0.43));
+  g.moveTo(X(1.25), Y(0.43)); g.lineTo(X(2.72), Y(0.43));
+  g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 0.02 * m;
+  g.beginPath(); g.moveTo(X(0.2), Y(0.74)); g.quadraticCurveTo(X(2), Y(0.70), X(3.9), Y(0.74)); g.stroke();
+  g.fillStyle = '#c9ced3';
+  [1.12, 2.07].forEach(function (s) { cantoArredondado(g, X(s), Y(0.94), 0.17 * m, 0.035 * m, 0.015 * m); g.fill(); });
+
+  var t = canvasTex(c);
+  t.repeat.set(1 / LEN, 1 / ALT);
+  t.offset.set(OX / LEN, 0);
+  return t;
+}
+
+/* Contorno do carro (capo, para-brisa, teto, traseira): u = altura em metros */
+function texFaixaCarro(P) {
+  var b = P.b, ALT = 1.8 * b, W = 512;
+  var c = novoCanvas(W, 4), g = c.getContext('2d');
+  function U(h) { return h * b / ALT * W; }
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, 4);
+  g.fillStyle = '#1b1d20'; g.fillRect(0, 0, U(0.42), 4);          /* para-choques e assoalho */
+  var vg = g.createLinearGradient(U(1.0), 0, U(1.44), 0);
+  vg.addColorStop(0, '#07090c'); vg.addColorStop(1, '#202833');
+  g.fillStyle = vg; g.fillRect(U(1.0), 0, U(1.44) - U(1.0), 4);    /* para-brisa e vidro traseiro */
+  var t = canvasTex(c);
+  t.repeat.set(1 / ALT, 1);
+  return t;
+}
+
+/* Aro de liga leve com 5 raios duplos */
+function texRoda() {
+  return texturaCache('roda', function () {
+    var S = 256, c = novoCanvas(S, S), g = c.getContext('2d'), cx = S / 2;
+    g.fillStyle = '#16181b'; g.fillRect(0, 0, S, S);
+    var gr = g.createRadialGradient(cx, cx, 90, cx, cx, 128);
+    gr.addColorStop(0, '#9aa1a8'); gr.addColorStop(1, '#5d636a');
+    g.beginPath(); g.arc(cx, cx, 126, 0, Math.PI * 2); g.arc(cx, cx, 104, 0, Math.PI * 2, true);
+    g.fillStyle = gr; g.fill('evenodd');
+    g.fillStyle = '#c4cad0';
+    for (var i = 0; i < 5; i++) {
+      var ang = i * Math.PI * 2 / 5 - Math.PI / 2;
+      [-0.13, 0.13].forEach(function (d) {
+        var a1 = ang + d;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a1 - 0.07) * 26, cx + Math.sin(a1 - 0.07) * 26);
+        g.lineTo(cx + Math.cos(a1 - 0.05) * 108, cx + Math.sin(a1 - 0.05) * 108);
+        g.lineTo(cx + Math.cos(a1 + 0.05) * 108, cx + Math.sin(a1 + 0.05) * 108);
+        g.lineTo(cx + Math.cos(a1 + 0.07) * 26, cx + Math.sin(a1 + 0.07) * 26);
+        g.closePath(); g.fill();
+      });
+    }
+    g.beginPath(); g.arc(cx, cx, 30, 0, Math.PI * 2); g.fillStyle = '#2b2e33'; g.fill();
+    g.beginPath(); g.arc(cx, cx, 14, 0, Math.PI * 2); g.fillStyle = '#9aa1a8'; g.fill();
+    return canvasTex(c);
+  });
+}
+
 /* Rotulo de cota pintado no chao ("12,5 m") */
 function texCota(texto) {
   var c = novoCanvas(512, 160), g = c.getContext('2d');
