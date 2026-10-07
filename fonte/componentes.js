@@ -411,6 +411,8 @@ AFRAME.registerComponent('pw-cena', {
     var dinamico = document.querySelector('#dinamico');
     while (dinamico.firstChild) dinamico.removeChild(dinamico.firstChild);
 
+    /* reflexo de fim de tarde na pintura, vidros e metais */
+    if (cena.renderer && !cena.object3D.environment) cena.object3D.environment = criarAmbiente(cena.renderer, 'noite');
     var m = construirMundo(cfg);
     this.mundo = m.grupo;
     el.setObject3D('mundo', m.grupo);

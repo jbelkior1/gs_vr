@@ -12,10 +12,21 @@ function mat(nome, fazer) {
   if (!MATS[nome]) MATS[nome] = fazer();
   return MATS[nome];
 }
+/* envMapIntensity baixo por padrao: o mapa de ambiente (criarAmbiente) da
+   brilho de verdade a pintura, vidro e metal, sem clarear demais o resto */
 function padrao(cor, rugosidade, metal, extra) {
-  var p = { color: cor, roughness: rugosidade === undefined ? 0.7 : rugosidade, metalness: metal || 0 };
+  var p = { color: cor, roughness: rugosidade === undefined ? 0.7 : rugosidade, metalness: metal || 0, envMapIntensity: 0.45 };
   if (extra) for (var k in extra) p[k] = extra[k];
   return new THREE.MeshStandardMaterial(p);
+}
+/* pintura automotiva: verniz (clearcoat) sobre a cor, reflete o ambiente */
+function pintura(cor, mapa, extra) {
+  var p = {
+    color: cor, map: mapa || null, roughness: 0.32, metalness: 0.35,
+    clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.1
+  };
+  if (extra) for (var k in extra) p[k] = extra[k];
+  return new THREE.MeshPhysicalMaterial(p);
 }
 function emissivo(cor, intensidade) {
   return new THREE.MeshStandardMaterial({ color: cor, emissive: cor, emissiveIntensity: intensidade || 1, roughness: 0.5 });
@@ -57,82 +68,289 @@ function sombraContato(largura, comprimento, x, z, y, opacidade) {
   return p;
 }
 
+/* ---------------------------------------------------------------- formas arredondadas */
+/* Normais suavizadas: faces vizinhas com angulo menor que o limite dividem a
+   normal, entao cantos arredondados ficam lisos e quinas vivas continuam
+   vivas. Trabalha na geometria sem indice (como a ExtrudeGeometry gera). */
+function suavizarNormais(geo, anguloGraus) {
+  var g = geo.index ? geo.toNonIndexed() : geo;
+  var pos = g.attributes.position, n = pos.count;
+  var face = new Float32Array(n * 3);
+  var a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  var cb = new THREE.Vector3(), ab = new THREE.Vector3();
+  for (var i = 0; i < n; i += 3) {
+    a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+    cb.subVectors(c, b); ab.subVectors(a, b); cb.cross(ab);
+    var len = cb.length();
+    if (len > 1e-12) cb.multiplyScalar(1 / len); else cb.set(0, 0, 0);
+    for (var k = 0; k < 3; k++) { face[(i + k) * 3] = cb.x; face[(i + k) * 3 + 1] = cb.y; face[(i + k) * 3 + 2] = cb.z; }
+  }
+  var grupos = {};
+  for (var j = 0; j < n; j++) {
+    var chave = Math.round(pos.getX(j) * 1e4) + '_' + Math.round(pos.getY(j) * 1e4) + '_' + Math.round(pos.getZ(j) * 1e4);
+    (grupos[chave] = grupos[chave] || []).push(j);
+  }
+  var limite = Math.cos(anguloGraus * Math.PI / 180);
+  var normal = new Float32Array(n * 3);
+  Object.keys(grupos).forEach(function (k) {
+    var lista = grupos[k];
+    lista.forEach(function (p) {
+      var px = face[p * 3], py = face[p * 3 + 1], pz = face[p * 3 + 2];
+      var sx = 0, sy = 0, sz = 0;
+      lista.forEach(function (q) {
+        var qx = face[q * 3], qy = face[q * 3 + 1], qz = face[q * 3 + 2];
+        if (px * qx + py * qy + pz * qz >= limite) { sx += qx; sy += qy; sz += qz; }
+      });
+      var l = Math.hypot(sx, sy, sz) || 1;
+      if (sx === 0 && sy === 0 && sz === 0) { sx = px; sy = py; sz = pz; l = 1; }
+      normal[p * 3] = sx / l; normal[p * 3 + 1] = sy / l; normal[p * 3 + 2] = sz / l;
+    });
+  });
+  g.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  return g;
+}
+
+/* Retangulo de cantos arredondados centrado na origem */
+function formaArredondada(w, h, r) {
+  r = Math.max(0.001, Math.min(r, w / 2 - 0.001, h / 2 - 0.001));
+  var s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+
+/* Barra com secao arredondada: dims [x, y, z] totais, eixo da extrusao,
+   raio dos cantos da secao e bisel nas pontas. Centro na origem. */
+function geoBarra(dims, eixo, raio, bisel) {
+  var bv = bisel || 0;
+  var sec, comp;
+  if (eixo === 'y') { sec = [dims[0], dims[2]]; comp = dims[1]; }
+  else if (eixo === 'x') { sec = [dims[2], dims[1]]; comp = dims[0]; }
+  else { sec = [dims[0], dims[1]]; comp = dims[2]; }
+  var geo = new THREE.ExtrudeGeometry(formaArredondada(sec[0] - 2 * bv, sec[1] - 2 * bv, raio - bv), {
+    depth: Math.max(0.001, comp - 2 * bv), bevelEnabled: bv > 0, bevelThickness: bv, bevelSize: bv,
+    bevelSegments: 3, curveSegments: 6, steps: 1
+  });
+  geo.translate(0, 0, -(comp - 2 * bv) / 2);
+  if (eixo === 'y') geo.rotateX(-Math.PI / 2);
+  else if (eixo === 'x') geo.rotateY(Math.PI / 2);
+  return suavizarNormais(geo, 40);
+}
+function barra(dims, eixo, raio, bisel, material, x, y, z, sombra) {
+  var m = new THREE.Mesh(geoBarra(dims, eixo, raio, bisel), material);
+  m.position.set(x || 0, y || 0, z || 0);
+  if (sombra) { m.castShadow = true; m.receiveShadow = true; }
+  return m;
+}
+/* Capsula deitada ao longo de x (fitas de LED, farois) */
+function capsula(raio, comprimento, material, x, y, z) {
+  var m = new THREE.Mesh(new THREE.CapsuleGeometry(raio, Math.max(0.001, comprimento - 2 * raio), 4, 10), material);
+  m.rotation.z = Math.PI / 2;
+  m.position.set(x || 0, y || 0, z || 0);
+  return m;
+}
+/* Plano de cantos arredondados com UV de 0 a 1 (telas e paineis) */
+function planoArredondado(w, h, r, material, x, y, z) {
+  var geo = new THREE.ShapeGeometry(formaArredondada(w, h, r), 6);
+  var pos = geo.attributes.position, uv = geo.attributes.uv;
+  for (var i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / w + 0.5, pos.getY(i) / h + 0.5);
+  var m = new THREE.Mesh(geo, material);
+  m.position.set(x || 0, y || 0, z || 0);
+  return m;
+}
+
+/* ---------------------------------------------------------------- ambiente */
+/* Mapa de ambiente (PMREM) gerado de uma cena simples: ceu em degrade e
+   alguns paineis de luz. E o que faz pintura, vidro e metal refletirem.
+   Um por renderizador (a textura pertence ao contexto WebGL). */
+function criarAmbiente(renderer, estilo) {
+  renderer.__pwAmbiente = renderer.__pwAmbiente || {};
+  if (renderer.__pwAmbiente[estilo]) return renderer.__pwAmbiente[estilo];
+  var dia = estilo === 'dia';
+  var cena = new THREE.Scene();
+  var c = novoCanvas(8, 256), g = c.getContext('2d');
+  var gr = g.createLinearGradient(0, 0, 0, 256);
+  if (dia) {
+    gr.addColorStop(0, '#5f93d1'); gr.addColorStop(0.42, '#bcd5ee'); gr.addColorStop(0.5, '#eef3f7');
+    gr.addColorStop(0.53, '#8b867c'); gr.addColorStop(1, '#55524c');
+  } else {
+    gr.addColorStop(0, '#0f2142'); gr.addColorStop(0.36, '#2e568d'); gr.addColorStop(0.48, '#9fbad6');
+    gr.addColorStop(0.52, '#262a31'); gr.addColorStop(1, '#121417');
+  }
+  g.fillStyle = gr; g.fillRect(0, 0, 8, 256);
+  var ceu = new THREE.Mesh(new THREE.SphereGeometry(40, 32, 16), new THREE.MeshBasicMaterial({ map: canvasTex(c), side: THREE.BackSide }));
+  cena.add(ceu);
+  function painel(w, h, cor, x, y, z) {
+    var m = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    m.color.setRGB(cor[0], cor[1], cor[2]);
+    var p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m);
+    p.position.set(x, y, z); p.lookAt(0, 0, 0);
+    cena.add(p);
+  }
+  if (dia) {
+    painel(10, 10, [7, 6.6, 6], -18, 26, 14);
+    painel(30, 8, [1.6, 1.7, 1.8], 0, 12, -30);
+  } else {
+    painel(14, 3, [4, 3.3, 2.4], -10, 16, 10);
+    painel(14, 3, [4, 3.3, 2.4], 12, 16, -6);
+    painel(26, 1.2, [3.5, 0.35, 0.45], 0, 3, -26);
+    painel(18, 1, [3.2, 0.3, 0.4], -24, 2.5, 6);
+    painel(20, 6, [1.2, 1.4, 1.8], 18, 8, 20);
+  }
+  var pm = new THREE.PMREMGenerator(renderer);
+  var tex = pm.fromScene(cena, 0.03).texture;
+  pm.dispose();
+  ceu.geometry.dispose();
+  renderer.__pwAmbiente[estilo] = tex;
+  return tex;
+}
+
 /* ---------------------------------------------------------------- carro */
-/* Perfil lateral extrudado. Frente para -z, centro no chao. */
+/* Medidas de cada tipo. O perfil base e o do hatch (4,05 m); o SUV escala
+   comprimento (a) e altura (b). rodas: centro das rodas no perfil base. */
+var TIPOS_CARRO = {
+  hatch: { L: 4.05, W: 1.80, b: 0.98, rodas: [0.80, 3.28], raio: 0.34 },
+  suv: { L: 4.45, W: 1.88, b: 1.12, rodas: [0.80, 3.28], raio: 0.37 }
+};
+var BISEL_CARRO = 0.04;
+
+function perfilCarro(P) {
+  var a = P.L / 4.05, b = P.b, R = P.raio + 0.12;
+  var s = new THREE.Shape();
+  function Q(cx, cy, x, y) { s.quadraticCurveTo(cx * a, cy * b, x * a, y * b); }
+  var r0 = P.rodas[0] * a, r1 = P.rodas[1] * a, yb = 0.30 * b;
+  s.moveTo(0.14 * a, yb);
+  s.lineTo(r0 - R, yb);
+  s.absarc(r0, yb, R, Math.PI, 0, true);
+  s.lineTo(r1 - R, yb);
+  s.absarc(r1, yb, R, Math.PI, 0, true);
+  s.lineTo(3.86 * a, yb);
+  Q(4.06, 0.31, 4.07, 0.52);   /* para-choque dianteiro */
+  Q(4.07, 0.72, 3.90, 0.78);   /* bico */
+  Q(3.45, 0.90, 2.92, 0.98);   /* capo longo */
+  Q(2.55, 1.32, 2.05, 1.47);   /* para-brisa inclinado */
+  Q(1.45, 1.55, 0.86, 1.47);   /* teto */
+  Q(0.40, 1.42, 0.22, 1.08);   /* vidro traseiro */
+  Q(0.06, 0.98, 0.04, 0.82);   /* tampa */
+  Q(-0.02, 0.36, 0.14, 0.30);  /* para-choque traseiro */
+  return s;
+}
+
+/* Gera (e guarda) a carroceria de um tipo: geometria + mapas dos lados e
+   da faixa (vidros, frisos e plasticos escuros). */
+var CARROCERIAS = {};
+function carroceria(tipo) {
+  if (CARROCERIAS[tipo]) return CARROCERIAS[tipo];
+  var P = TIPOS_CARRO[tipo], a = P.L / 4.05, b = P.b, R = P.raio + 0.12;
+  var prof = P.W - 2 * 0.12;
+  var arcos = P.rodas.map(function (r) { return r * a; });
+  var uvCarro = {
+    /* laterais: UV = (s, h) em metros */
+    generateTopUV: function (geometry, v, iA, iB, iC) {
+      return [iA, iB, iC].map(function (i) { return new THREE.Vector2(v[i * 3], v[i * 3 + 1]); });
+    },
+    /* contorno (capo, vidros, teto, para-choques): UV pela altura; dentro dos
+       arcos de roda vai para a faixa escura */
+    generateSideWallUV: function (geometry, v, iA, iB, iC, iD) {
+      return [iA, iB, iC, iD].map(function (i) {
+        var x = v[i * 3], y = v[i * 3 + 1];
+        var arco = arcos.some(function (r) { return Math.abs(Math.hypot(x - r, y - 0.30 * b) - R) < 0.09 && y > 0.28 * b; });
+        return new THREE.Vector2(arco ? 0.02 : y, v[i * 3 + 2]);
+      });
+    }
+  };
+  var geo = new THREE.ExtrudeGeometry(perfilCarro(P), {
+    depth: prof, bevelEnabled: true, bevelThickness: 0.12, bevelSize: BISEL_CARRO,
+    bevelSegments: 5, curveSegments: 12, steps: 1, UVGenerator: uvCarro
+  });
+  /* teto mais estreito que a base (tumblehome) e cantos arredondados em planta */
+  var pos = geo.attributes.position, meio = prof / 2;
+  var cinto = 1.0 * b, teto = 1.5 * b;
+  for (var i = 0; i < pos.count; i++) {
+    var s = pos.getX(i), h = pos.getY(i), w = pos.getZ(i) - meio;
+    var t = Math.min(1, Math.max(0, (h - cinto) / (teto - cinto)));
+    var f = 1 - 0.14 * t * t * (3 - 2 * t);
+    var e = Math.min(1, Math.abs((s - P.L / 2) / (P.L / 2)));
+    f *= 1 - 0.2 * Math.pow(e, 4);
+    pos.setZ(i, w * f + meio);
+  }
+  geo = suavizarNormais(geo, 52);
+  geo.rotateY(Math.PI / 2);
+  geo.translate(-meio, 0, P.L / 2);
+  geo.userData.cache = true;  /* reaproveitada por todos os carros do tipo: nao liberar */
+
+  var lado = texLateralCarro(P), faixa = texFaixaCarro(P);
+  CARROCERIAS[tipo] = { geo: geo, lado: lado, faixa: faixa, P: P };
+  return CARROCERIAS[tipo];
+}
+
+/* Frente para -z, centro no chao. op: { suv, cor } */
 function construirCarro(op) {
   op = op || {};
-  var suv = !!op.suv;
-  var k = suv ? 1.1 : 1, ky = suv ? 1.1 : 1;
-  var L = 4.02 * k, largura = suv ? 1.86 : 1.76;
+  var tipo = op.suv ? 'suv' : 'hatch';
+  var cor = op.cor || '#a3aab2';
+  var C = carroceria(tipo), P = C.P, a = P.L / 4.05, b = P.b;
   var g = new THREE.Group();
 
-  function perfil(pts) {
-    var s = new THREE.Shape();
-    s.moveTo(pts[0][0] * k, pts[0][1] * ky);
-    for (var i = 1; i < pts.length; i++) s.lineTo(pts[i][0] * k, pts[i][1] * ky);
-    s.closePath();
-    return s;
-  }
-  function extrudar(forma, profundidade, bisel, material) {
-    var geo = new THREE.ExtrudeGeometry(forma, {
-      depth: profundidade, bevelEnabled: true, bevelThickness: bisel, bevelSize: bisel * 0.8,
-      bevelSegments: 2, steps: 1, curveSegments: 4
-    });
-    geo.rotateY(Math.PI / 2);
-    geo.translate(-profundidade / 2, 0, L / 2);
-    var m = new THREE.Mesh(geo, material);
-    m.castShadow = true; m.receiveShadow = true;
-    return m;
-  }
+  var matLado = mat('pinturaLado-' + tipo + cor, function () { return pintura(cor, C.lado); });
+  var matFaixa = mat('pinturaFaixa-' + tipo + cor, function () { return pintura(cor, C.faixa); });
+  var corpo = new THREE.Mesh(C.geo, [matLado, matFaixa]);
+  corpo.castShadow = true; corpo.receiveShadow = true;
+  g.add(corpo);
 
-  /* sem mapa de ambiente, metal alto fica preto: pintura com pouco metal */
-  var corpo = mat('carro-' + (op.cor || 'cinza'), function () {
-    return padrao(op.cor || '#a3aab2', 0.35, 0.1);
-  });
-  var vidro = mat('carro-vidro', function () { return padrao('#1b2631', 0.15, 0.1, { emissive: '#0c141c', emissiveIntensity: 0.6 }); });
-  var preto = mat('carro-preto', function () { return padrao('#121417', 0.6, 0.2); });
-
-  var base = perfil([
-    [0.08, 0.27], [0.0, 0.5], [0.03, 0.97], [0.24, 1.03], [2.95, 1.02], [3.55, 0.92],
-    [3.95, 0.8], [4.02, 0.62], [3.97, 0.33], [3.78, 0.27]
-  ]);
-  g.add(extrudar(base, largura - 0.1, 0.05, corpo));
-
-  var estufa = perfil([[0.2, 1.0], [0.42, 1.43], [2.3, 1.5], [2.98, 1.0]]);
-  g.add(extrudar(estufa, largura - 0.3, 0.03, vidro));
-  g.add(caixa(largura - 0.38, 0.05, 1.8 * k, corpo, 0, 1.5 * ky, L / 2 - 1.42 * k));
-
-  /* para-choques e soleiras escuras */
-  g.add(caixa(largura - 0.02, 0.2, 0.12, preto, 0, 0.36, L / 2 - 0.02));
-  g.add(caixa(largura - 0.02, 0.18, 0.12, preto, 0, 0.36, -L / 2 + 0.06));
-
-  /* rodas */
-  var pneu = mat('pneu', function () { return padrao('#0b0c0e', 0.9, 0); });
-  var roda = mat('roda', function () { return padrao('#b9c0c7', 0.3, 0.3); });
-  var raio = suv ? 0.36 : 0.33;
-  [0.72 * k, 3.3 * k].forEach(function (s) {
-    [-1, 1].forEach(function (lado) {
-      var x = lado * (largura / 2 - 0.1);
-      var p = cilindro(raio, raio, 0.24, pneu, x, raio, L / 2 - s, 22);
-      p.rotation.z = Math.PI / 2; p.castShadow = true; g.add(p);
-      var r = cilindro(raio * 0.62, raio * 0.62, 0.25, roda, x + lado * 0.002, raio, L / 2 - s, 16);
-      r.rotation.z = Math.PI / 2; g.add(r);
+  /* rodas: pneu (toro) e aro de liga */
+  var pneu = mat('pneu', function () { return padrao('#0d0e10', 0.85, 0, { envMapIntensity: 0.3 }); });
+  var aro = mat('aro', function () { return padrao('#ffffff', 0.35, 0.6, { map: texRoda(), envMapIntensity: 1 }); });
+  var aroLado = mat('aroLado', function () { return padrao('#2a2d31', 0.5, 0.5); });
+  var rp = P.raio;
+  P.rodas.forEach(function (r) {
+    var z = P.L / 2 - r * a;
+    [-1, 1].forEach(function (sinal) {
+      var x = sinal * (P.W / 2 - 0.13);
+      var t = new THREE.Mesh(new THREE.TorusGeometry(rp * 0.74, rp * 0.26, 12, 36), pneu);
+      t.rotation.y = Math.PI / 2;
+      t.position.set(x, rp, z);
+      t.castShadow = true;
+      g.add(t);
+      var rim = new THREE.Mesh(new THREE.CylinderGeometry(rp * 0.62, rp * 0.62, rp * 0.5, 32), [aroLado, aro, aro]);
+      rim.rotation.z = Math.PI / 2;
+      rim.position.set(x + sinal * 0.005, rp, z);
+      g.add(rim);
     });
   });
 
-  /* lanternas e farois */
-  var lanterna = mat('lanterna', function () { return emissivo('#ff2a2a', 1.3); });
-  var farol = mat('farol', function () { return emissivo('#e8f3ff', 1.1); });
-  [-1, 1].forEach(function (lado) {
-    g.add(caixa(0.34, 0.08, 0.05, lanterna, lado * 0.55, 0.93 * ky, L / 2 + 0.02));
-    g.add(caixa(0.36, 0.07, 0.05, farol, lado * 0.56, 0.75 * ky, -L / 2 - 0.01));
+  /* farois em LED, lanterna em barra, retrovisores, placa e grade */
+  var farol = mat('farolLed', function () { return emissivo('#eef6ff', 1.6); });
+  var lanterna = mat('lanternaLed', function () { return emissivo('#ff2026', 1.8); });
+  var escuro = mat('carroEscuro', function () { return padrao('#0b0c0e', 0.35, 0.3, { envMapIntensity: 0.9 }); });
+  var zFrente = P.L / 2 - 4.02 * a - 0.035, zTras = P.L / 2 - 0.05 * a + 0.035;
+  [-1, 1].forEach(function (sinal) {
+    var farolEsq = capsula(0.036, 0.42, farol, sinal * 0.47, 0.72 * b, zFrente + 0.03);
+    farolEsq.rotation.y = sinal * 0.18;  /* acompanha a curva do bico */
+    g.add(farolEsq);
   });
-  g.add(caixa(0.9, 0.03, 0.04, lanterna, 0, 0.86 * ky, L / 2 + 0.03));
-  g.add(caixa(0.52, 0.12, 0.02, mat('placa', function () { return padrao('#e9ecef', 0.5, 0); }), 0, 0.55, L / 2 + 0.06));
+  g.add(capsula(0.012, 1.25, farol, 0, 0.765 * b, zFrente + 0.045));
+  g.add(capsula(0.026, P.W - 0.34, lanterna, 0, 0.9 * b, zTras));
+  var grade = planoArredondado(0.9, 0.16, 0.07, escuro, 0, 0.42 * b, -P.L / 2 - 0.03);
+  grade.rotation.y = Math.PI;
+  g.add(grade);
+  g.add(planoArredondado(0.52, 0.13, 0.03, mat('placa', function () { return padrao('#eef0f2', 0.5, 0); }), 0, 0.58 * b, P.L / 2 + 0.045));
+  var matLisa = mat('pinturaLisa-' + cor, function () { return pintura(cor); });
+  [-1, 1].forEach(function (sinal) {
+    var esp = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.1, 4, 10), matLisa);
+    esp.rotation.z = Math.PI / 2;
+    esp.scale.set(1, 1.15, 0.75);
+    esp.position.set(sinal * (P.W / 2 - 0.02), 1.03 * b, P.L / 2 - 2.72 * a);
+    esp.castShadow = true;
+    g.add(esp);
+  });
 
   /* tampa de recarga: para-lama dianteiro esquerdo */
-  g.userData.porta = new THREE.Vector3(-largura / 2 + 0.02, 0.86 * ky, -L / 2 + 0.62 * k);
-  g.userData.comprimento = L;
+  g.userData.porta = new THREE.Vector3(-P.W / 2 + 0.01, 0.84 * b, P.L / 2 - 3.5 * a);
+  g.userData.comprimento = P.L;
   return g;
 }
 
@@ -162,13 +380,13 @@ function construirEstacao(op) {
       polygonOffset: true, polygonOffsetFactor: -2
     });
   });
-  var matPilar = mat('pilar', function () { return padrao('#141518', 0.45, 0.35); });
+  var matPilar = mat('pilar', function () { return padrao('#141518', 0.32, 0.4, { envMapIntensity: 0.8 }); });
   var matLed = mat('led', function () { return emissivo('#ff2430', 2.2); });
-  var matCaixa = mat('wallbox', function () { return padrao('#e7e9ec', 0.35, 0.1); });
+  var matCaixa = mat('wallbox', function () { return padrao('#eef0f2', 0.22, 0.05, { envMapIntensity: 0.9 }); });
   var matFace = mat('wallbox-face', function () {
     return new THREE.MeshBasicMaterial({ map: texCarregador() });
   });
-  var matTotem = mat('totem', function () { return padrao('#0f1012', 0.4, 0.3); });
+  var matTotem = mat('totem', function () { return padrao('#0f1012', 0.28, 0.35, { envMapIntensity: 0.8 }); });
   var matTela = mat('totem-tela', function () { return new THREE.MeshBasicMaterial({ map: texTotem() }); });
   var matBatente = mat('batente', function () { return padrao('#26282c', 0.85, 0); });
   var matAmarelo = mat('amarelo', function () { return padrao('#e9b824', 0.6, 0); });
@@ -180,10 +398,9 @@ function construirEstacao(op) {
     v.receiveShadow = true;
     v.renderOrder = 1;
     g.add(v);
-    var bat = caixa(1.6, 0.12, 0.16, matBatente, xc, 0.06, zFundo + FE + 0.75, true);
-    g.add(bat);
-    g.add(caixa(0.22, 0.121, 0.161, matAmarelo, xc - 0.55, 0.06, zFundo + FE + 0.75));
-    g.add(caixa(0.22, 0.121, 0.161, matAmarelo, xc + 0.55, 0.06, zFundo + FE + 0.75));
+    g.add(barra([1.6, 0.12, 0.16], 'x', 0.05, 0.03, matBatente, xc, 0.06, zFundo + FE + 0.75, true));
+    g.add(barra([0.22, 0.124, 0.164], 'x', 0.05, 0, matAmarelo, xc - 0.55, 0.06, zFundo + FE + 0.75));
+    g.add(barra([0.22, 0.124, 0.164], 'x', 0.05, 0, matAmarelo, xc + 0.55, 0.06, zFundo + FE + 0.75));
     ancoras.vagas.push(new THREE.Vector3(xc, 0, zVaga));
   }
 
@@ -193,25 +410,26 @@ function construirEstacao(op) {
     var xa = x0 + VL * a + 0.35, xb = x0 + VL * (b + 1) - 0.35;
     var meio = (xa + xb) / 2;
     [xa, xb].forEach(function (xp) {
-      g.add(caixa(0.6, 3.0, 0.5, matPilar, xp, 1.5, zPilar, true));
+      g.add(barra([0.6, 3.0, 0.5], 'y', 0.1, 0.03, matPilar, xp, 1.5, zPilar, true));
       if (op.paraFoto || op.sombras) g.add(sombraContato(1.3, 1.1, xp, zPilar, yChao + 0.004, 0.6));
     });
     var vigaL = xb - xa + 0.6;
-    g.add(caixa(vigaL, 0.26, 0.64, matPilar, meio, 3.13, zPilar, true));
-    g.add(caixa(vigaL, 0.07, 0.02, matLed, meio, 3.05, zPilar + 0.33));
-    g.add(caixa(vigaL, 0.07, 0.02, matLed, meio, 3.05, zPilar - 0.33));
-    g.add(caixa(vigaL - 0.1, 0.02, 0.5, matLed, meio, 2.995, zPilar));
+    g.add(barra([vigaL, 0.28, 0.64], 'x', 0.11, 0.05, matPilar, meio, 3.13, zPilar, true));
+    /* fitas de LED arredondadas na frente, atras e por baixo da viga */
+    g.add(capsula(0.034, vigaL - 0.12, matLed, meio, 3.05, zPilar + 0.33));
+    g.add(capsula(0.034, vigaL - 0.12, matLed, meio, 3.05, zPilar - 0.33));
+    g.add(barra([vigaL - 0.2, 0.02, 0.42], 'x', 0.009, 0, matLed, meio, 2.985, zPilar));
     ancoras.portais.push(new THREE.Vector3(meio, 3.13, zPilar));
 
     /* carregadores: vaga da esquerda no pilar da esquerda, e assim por diante */
     var pilares = (a === b) ? [xa] : [xa, xb];
     pilares.forEach(function (xp) {
       var zf = zPilar + 0.25;
-      g.add(caixa(0.42, 0.6, 0.15, matCaixa, xp, 1.3, zf + 0.075, true));
-      var face = plano(0.27, 0.38, matFace, xp, 1.31, zf + 0.152);
-      g.add(face);
-      g.add(caixa(0.38, 0.03, 0.02, matLed, xp, 1.61, zf + 0.13));
-      g.add(caixa(0.09, 0.16, 0.1, matCaixa, xp + 0.12, 0.93, zf + 0.05));
+      /* wallbox no estilo do GoodWe HCA: corpo branco arredondado, painel escuro */
+      g.add(barra([0.42, 0.6, 0.15], 'z', 0.09, 0.035, matCaixa, xp, 1.3, zf + 0.075, true));
+      g.add(planoArredondado(0.3, 0.42, 0.05, matFace, xp, 1.31, zf + 0.152));
+      g.add(capsula(0.013, 0.3, matLed, xp, 1.56, zf + 0.148));
+      g.add(barra([0.09, 0.16, 0.1], 'z', 0.035, 0.012, matCaixa, xp + 0.12, 0.93, zf + 0.05));
       /* cabo enrolado no suporte */
       var curva = new THREE.CatmullRomCurve3([
         new THREE.Vector3(xp, 1.06, zf + 0.08), new THREE.Vector3(xp - 0.08, 0.7, zf + 0.12),
@@ -227,8 +445,8 @@ function construirEstacao(op) {
 
     /* totem de pagamento no meio do portal (so quando ha duas vagas) */
     if (a !== b) {
-      g.add(caixa(0.52, 1.72, 0.16, matTotem, meio, 0.86, zPilar, true));
-      g.add(plano(0.4, 0.66, matTela, meio, 1.22, zPilar + 0.081));
+      g.add(barra([0.52, 1.72, 0.16], 'z', 0.12, 0.04, matTotem, meio, 0.86, zPilar, true));
+      g.add(planoArredondado(0.4, 0.66, 0.04, matTela, meio, 1.22, zPilar + 0.081));
       if (op.paraFoto || op.sombras) g.add(sombraContato(0.9, 0.6, meio, zPilar, yChao + 0.004, 0.55));
       ancoras.totens.push(new THREE.Vector3(meio, 1.22, zPilar + 0.09));
     }
@@ -274,10 +492,11 @@ function construirLoja(B) {
   var xCafe0 = esq + 0.7, xCafe1 = esq + 8.7, xLoja0 = esq + 9.3, xLoja1 = dir - 0.7;
 
   /* estrutura: pilares de concreto, marquise e faixa preta */
-  g.add(caixa(0.7, altVidro + 0.36, 1.0, concreto, esq + 0.35, (altVidro + 0.36) / 2, ZF + 0.2, true));
-  g.add(caixa(0.6, altVidro, 0.5, concreto, (xCafe1 + xLoja0) / 2, altVidro / 2, ZF, true));
-  g.add(caixa(0.7, altVidro + 0.36, 1.0, concreto, dir - 0.35, (altVidro + 0.36) / 2, ZF + 0.2, true));
-  var marquise = caixa(B, 0.36, 2.9, concretoClaro, 0, altVidro + 0.18, ZF + 1.25, true);
+  g.add(barra([0.7, altVidro + 0.36, 1.0], 'y', 0.12, 0, concreto, esq + 0.35, (altVidro + 0.36) / 2, ZF + 0.2, true));
+  g.add(barra([0.6, altVidro, 0.5], 'y', 0.1, 0, concreto, (xCafe1 + xLoja0) / 2, altVidro / 2, ZF, true));
+  g.add(barra([0.7, altVidro + 0.36, 1.0], 'y', 0.12, 0, concreto, dir - 0.35, (altVidro + 0.36) / 2, ZF + 0.2, true));
+  /* marquise com a borda da frente arredondada */
+  var marquise = barra([B, 0.36, 2.9], 'x', 0.14, 0.02, concretoClaro, 0, altVidro + 0.18, ZF + 1.25, true);
   g.add(marquise);
   g.add(caixa(B, 2.95, 0.4, preto, 0, altVidro + 0.36 + 1.475, ZF - 0.1, true));
   g.add(caixa(B + 0.02, 0.12, 0.42, concreto, 0, altVidro + 0.36 + 2.95 + 0.06, ZF - 0.1));
@@ -429,15 +648,18 @@ function arvore(g, x, z, escala) {
 
 /* Pilone com a marca, ao lado das vagas */
 function construirPilone(g, x, z) {
-  var preto = mat('pilone', function () { return padrao('#111215', 0.45, 0.3); });
+  var preto = mat('pilone', function () { return padrao('#111215', 0.3, 0.35, { envMapIntensity: 0.8 }); });
   var led = mat('led', function () { return emissivo('#ff2430', 2.2); });
-  g.add(caixa(1.6, 0.3, 0.9, mat('concreto', function () { return padrao('#a9a8a3', 0.92, 0); }), x, 0.15, z, true));
-  g.add(caixa(1.25, 6.6, 0.5, preto, x, 3.3, z, true));
+  g.add(barra([1.6, 0.3, 0.9], 'y', 0.15, 0.03, mat('concreto', function () { return padrao('#a9a8a3', 0.92, 0); }), x, 0.15, z, true));
+  g.add(barra([1.25, 6.6, 0.5], 'y', 0.14, 0.05, preto, x, 3.3, z, true));
   var face = new THREE.MeshBasicMaterial({ map: texPilone() });
-  g.add(plano(1.1, 4.4, face, x, 4.25, z + 0.251));
-  var tras = plano(1.1, 4.4, face, x, 4.25, z - 0.251); tras.rotation.y = Math.PI; g.add(tras);
-  g.add(caixa(0.05, 6.3, 0.05, led, x - 0.6, 3.35, z + 0.24));
-  g.add(caixa(0.05, 6.3, 0.05, led, x + 0.6, 3.35, z + 0.24));
+  g.add(planoArredondado(1.0, 4.0, 0.05, face, x, 4.3, z + 0.251));
+  var tras = planoArredondado(1.0, 4.0, 0.05, face, x, 4.3, z - 0.251); tras.rotation.y = Math.PI; g.add(tras);
+  [-1, 1].forEach(function (s) {
+    var fita = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 6.1, 4, 8), led);
+    fita.position.set(x + s * 0.575, 3.35, z + 0.2);
+    g.add(fita);
+  });
 }
 
 /* ---------------------------------------------------------------- mundo */
@@ -577,7 +799,7 @@ function liberarMundo(raiz) {
   });
   raiz.traverse(function (o) {
     if (o.isLight && o.dispose) o.dispose();  /* libera o mapa de sombra da luz */
-    if (o.geometry) o.geometry.dispose();
+    if (o.geometry && !o.geometry.userData.cache) o.geometry.dispose();
     if (!o.material) return;
     (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
       ['map', 'emissiveMap'].forEach(function (k) {

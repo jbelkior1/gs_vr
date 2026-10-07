@@ -22,7 +22,7 @@ function rendererForaDaTela(w, h) {
 /* libera so as geometrias: materiais e texturas ficam no cache e sao
    reaproveitados pela cena VR */
 function liberarGeometrias(obj) {
-  obj.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+  obj.traverse(function (o) { if (o.geometry && !o.geometry.userData.cache) o.geometry.dispose(); });
 }
 
 /* Camera do three a partir da pose medida (R, t no padrao de visao
@@ -47,8 +47,10 @@ function cameraDaFoto(m, w, h) {
 
 /* Renderiza so o eletroposto, com fundo transparente, do ponto de vista da foto */
 function renderizarEstacaoNaFoto(m, formato, w, h, alinhamento) {
+  var r = rendererForaDaTela(w, h);
   var cena = new THREE.Scene();
-  cena.add(new THREE.HemisphereLight('#eef2f8', '#55524c', 1.0));
+  cena.environment = criarAmbiente(r, 'dia');
+  cena.add(new THREE.HemisphereLight('#eef2f8', '#55524c', 0.7));
   var sol = new THREE.DirectionalLight('#ffffff', 0.75);
   sol.position.set(-4, 10, 7);
   sol.target.position.set(m.largura / 2, 0, -m.profundidade / 2);
@@ -58,7 +60,6 @@ function renderizarEstacaoNaFoto(m, formato, w, h, alinhamento) {
     carros: [0], paraFoto: true, alinhamento: alinhamento
   });
   cena.add(est.grupo);
-  var r = rendererForaDaTela(w, h);
   r.shadowMap.enabled = false;
   r.render(cena, cameraDaFoto(m, w, h));
   liberarGeometrias(cena);
@@ -209,6 +210,7 @@ function gerarFotoExemplo() {
   cam.updateMatrixWorld(true);
 
   var r = rendererForaDaTela(W, H);
+  cena.environment = criarAmbiente(r, 'dia');
   r.shadowMap.enabled = true;
   r.shadowMap.type = THREE.PCFSoftShadowMap;
   r.render(cena, cam);
@@ -247,10 +249,19 @@ function renderizarCapa(cv) {
   cam.position.set(-6.5, 2.3, 15.5);
   cam.lookAt(1.2, 2.6, -1.5);
   var r = rendererForaDaTela(W, H);
+  cena.environment = criarAmbiente(r, 'noite');
   r.shadowMap.enabled = true;
   r.shadowMap.type = THREE.PCFSoftShadowMap;
-  r.render(cena, cam);
+  /* compila em paralelo antes de desenhar; o resto da pagina segue livre */
+  var compilar = r.compileAsync ? r.compileAsync(cena, cam) : Promise.resolve();
   r.shadowMap.enabled = false;
-  cv.getContext('2d').drawImage(r.domElement, 0, 0);
-  liberarGeometrias(cena);
+  return compilar.then(function () {
+    var r2 = rendererForaDaTela(W, H);
+    r2.shadowMap.enabled = true;
+    r2.shadowMap.type = THREE.PCFSoftShadowMap;
+    r2.render(cena, cam);
+    r2.shadowMap.enabled = false;
+    cv.getContext('2d').drawImage(r2.domElement, 0, 0);
+    liberarGeometrias(cena);
+  });
 }
