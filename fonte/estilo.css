@@ -168,6 +168,7 @@ legend { font-weight: 700; margin-bottom: 10px; font-size: 15px; }
   background: rgba(245, 185, 66, 0.1); margin-top: 6px;
 }
 .msg { min-height: 20px; font-size: 14px; color: var(--ruim); }
+.msg.ok { color: var(--ok); }
 
 .formatos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 14px; }
 .formatos button {

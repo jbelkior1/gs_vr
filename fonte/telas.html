@@ -13,6 +13,10 @@
     <h1>O Ponto W cabe no seu comércio?</h1>
     <p class="lead">Fotografe o estacionamento. Em um minuto você vê se o eletroposto cabe ali, quanto ele rende e entra nele em realidade virtual.</p>
     <div class="heroi"><canvas id="cvHeroi" width="1280" height="720"></canvas></div>
+    <div class="cartao destaque" id="notaIntegracao" hidden>
+      <h3>Avaliação para o seu pedido de franquia</h3>
+      <p style="margin:0">Faça a avaliação do local. No fim, toque em &ldquo;Enviar avaliação para a GoodWe&rdquo;: a foto, o Ponto W projetado e as medidas voltam para o seu pedido.</p>
+    </div>
     <button id="btnAvaliar" class="btn primario">Avaliar meu local</button>
     <button id="btnModelo" class="btn">Ver o Ponto W modelo em VR</button>
     <p class="nota">Funciona no navegador do celular, sem instalar nada. Para o VR, o melhor é o Chrome no Android; no iPhone a cena acompanha o giroscópio em tela cheia.</p>
@@ -162,6 +166,12 @@
       <p class="nota" style="margin-top:10px">Premissas do modelo econômico do Ponto W: venda a R$ 1,90/kWh, energia à tarifa da região escolhida, 6,5 kW entregues por carregador, sessão de 1,5 h, metade dos motoristas entra na loja com ticket extra de R$ 28 (premissa) e margem de 35%. Royalties de 6%, fundo de 2% e meio de pagamento de 1,5% só sobre a recarga, mais a plataforma de R$ 180/mês (R$ 360 no Hub).</p>
     </div>
 
+    <div class="cartao destaque" id="blocoEnvio" hidden>
+      <h3>Enviar para a GoodWe</h3>
+      <p>A foto do local, o Ponto W projetado e as medidas vão para o seu pedido de franquia, e a GoodWe vê o mesmo que você viu aqui.</p>
+      <p class="msg" id="msgEnvio" role="alert"></p>
+      <button id="btnEnviarAvaliacao" class="btn primario" type="button">Enviar avaliação para a GoodWe</button>
+    </div>
     <button id="btnEntrarVR" class="btn primario">Entrar no VR do meu Ponto W</button>
     <button id="btnAjustar" class="btn">Ajustar a marcação</button>
     <button id="btnRecomecar" class="btn link">Avaliar outro local</button>

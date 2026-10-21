@@ -33,7 +33,7 @@ function exigirAscii(nome, s) {
 const css = exigirAscii('estilo.css', ler('estilo.css'));
 const telas = htmlAscii(ler('telas.html'));
 const medicao = jsAscii(ler('medicao.js'));
-const app = jsAscii(['texturas.js', 'modelos.js', 'otimizacao.js', 'projecao.js', 'componentes.js', 'fluxo.js'].map(ler).join('\n'));
+const app = jsAscii(['texturas.js', 'modelos.js', 'otimizacao.js', 'projecao.js', 'componentes.js', 'integracao.js', 'fluxo.js'].map(ler).join('\n'));
 const cena = htmlAscii(ler('cena.html'));
 exigirAscii('aframe', lib);
 

@@ -492,9 +492,10 @@ function mostrarResultado() {
   atualizarProjecao();
 }
 
-function atualizarProjecao() {
-  var m = estado.medida, F = estado.foto, cv = $('cvProjecao');
-  if (!m || !F) return;
+/* O Ponto W desenhado na foto (so o eletroposto, fundo transparente), para o formato e a
+   posicao das vagas atuais. Fica em cache ate mudar a marcacao. */
+function renderDaProjecao() {
+  var m = estado.medida, F = estado.foto;
   var alin = alinhamentoAtual(), chave = estado.formato + '|' + alin;
   var r = estado.renders[chave];
   if (!r) {
@@ -502,6 +503,13 @@ function atualizarProjecao() {
     catch (err) { r = novoCanvas(F.w, F.h); }
     estado.renders[chave] = r;
   }
+  return r;
+}
+
+function atualizarProjecao() {
+  var m = estado.medida, F = estado.foto, cv = $('cvProjecao');
+  if (!m || !F) return;
+  var alin = alinhamentoAtual(), r = renderDaProjecao();
   document.querySelectorAll('#segAlinhamento input').forEach(function (i) { i.checked = i.value === alin; });
   marcarOpcoes();
   var div = Number($('rgAntesDepois').value) / 100;
@@ -561,6 +569,7 @@ function sairVR() {
 function iniciar() {
   ligarMarcacao();
   prepararDados();
+  ligarIntegracao();
 
   $('btnAvaliar').onclick = function () { irPara('telaFoto'); };
   $('btnModelo').onclick = function () {

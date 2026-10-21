@@ -18,6 +18,27 @@ Melhor experiência no Chrome para Android com suporte a WebXR. Onde o ícone de
 
 Também dá para ir direto ao Ponto W modelo em VR, sem foto. Para apresentar sem um estacionamento por perto, use a foto de exemplo.
 
+## Integração com o Seja GoodWe
+
+O formulário de franquia do `gs_goodwe` (página `/seja-goodwe`) abre esta página com três parâmetros na URL:
+
+| Parâmetro | O que é |
+| --- | --- |
+| `retorno` | endereço do formulário, para onde o comerciante volta depois de enviar |
+| `api` | URL do projeto Supabase da GoodWe (só `https`; `http` apenas em `localhost`) |
+| `chave` | chave publicável do Supabase |
+
+Só com os três, a tela de resultado mostra o botão principal **Enviar avaliação para a GoodWe** (os botões de VR continuam). Ao tocar, a página:
+
+1. gera dois JPEG: a foto do local (no máximo 1600 px no maior lado) e o Ponto W projetado na foto, sempre inteiro, no formato e na posição das vagas que estão na tela;
+2. envia os dois ao Storage, em `POST {api}/storage/v1/object/avaliacoes/{id}/foto.jpg` e `.../render.jpg` (bucket público `avaliacoes`);
+3. grava uma linha em `avaliacoes_local` (`POST {api}/rest/v1/avaliacoes_local`) com o `id` (`av-` e 8 caracteres), os endereços públicos das duas imagens e os dados da avaliação: medidas da área, cabimento de cada formato (cabe, no limite, não cabe), formato recomendado ou escolhido, viabilidade, horas previstas e conta da unidade, segmento, região, fluxo de pessoas, entrada elétrica (ligação, disjuntor e a carga em kW), lente e se a foto é a de exemplo;
+4. volta para `retorno` acrescentando `?avaliacao={id}` (ou `&avaliacao={id}` se o endereço já tiver query).
+
+A linha só é gravada depois que as duas imagens chegaram. Se algo falha, a tela mostra o erro em português e o botão vira "Tentar de novo" (cada tentativa usa um id novo). A foto de exemplo também envia, o que serve para apresentações. Sem os três parâmetros, o botão não aparece e a página não faz nenhuma requisição.
+
+O código está em `fonte/integracao.js`. A tabela, o bucket e as políticas ficam na migration `20261021140000_avaliacoes.sql` do `gs_goodwe`.
+
 ## Como a medida funciona
 
 - A área marcada é tratada como um retângulo no chão plano. Os 4 cantos dão a homografia entre o chão e a foto, e com a lente do celular ela vira a pose da câmera e a proporção entre frente e fundo.
@@ -36,7 +57,7 @@ A precisão depende da foto: com a medida da frente e a área bem visível, o fu
 
 ## Estrutura
 
-O site publicado é só o `index.html`, autossuficiente: a biblioteca A-Frame 1.5 está embutida e a página não busca nada fora (a consulta do polyfill de Cardboard ao `dpdb.webvr.rocks` é desligada no build). Basta servir o arquivo em qualquer host com HTTPS. A cena VR só entra na página quando o VR é aberto, para não gastar bateria durante a análise, e as peças estáticas com o mesmo material são juntadas numa malha só para aliviar o celular.
+O site publicado é só o `index.html`, autossuficiente: a biblioteca A-Frame 1.5 está embutida e a página não busca nada fora (a consulta do polyfill de Cardboard ao `dpdb.webvr.rocks` é desligada no build). A única requisição externa é o envio da avaliação ao Seja GoodWe, descrito em "Integração com o Seja GoodWe", e só acontece quando o comerciante toca no botão de envio. Basta servir o arquivo em qualquer host com HTTPS. A cena VR só entra na página quando o VR é aberto, para não gastar bateria durante a análise, e as peças estáticas com o mesmo material são juntadas numa malha só para aliviar o celular.
 
 O código legível fica em `fonte/` e o `index.html` é gerado a partir dele:
 
