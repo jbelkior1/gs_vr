@@ -6,6 +6,8 @@ function $(id) { return document.getElementById(id); }
    mesmo catalogo do sistema web (gs_goodwe, src/domain/catalogo.ts) */
 var REGIOES = [
   ['São Paulo · Pinheiros', 0.95, 0.85], ['São Paulo · Moema', 0.9, 0.85], ['São Paulo · Tatuapé', 0.62, 0.85],
+  ['São Paulo · Higienópolis/Consolação', 0.88, 0.85], ['São Paulo · Paulista/Bela Vista', 0.92, 0.85], ['São Paulo · Vila Mariana', 0.82, 0.85], ['São Paulo · Itaim Bibi/Faria Lima', 0.97, 0.85],
+  ['São Paulo · Morumbi/Butantã', 0.86, 0.85], ['São Paulo · Santana', 0.6, 0.85], ['São Paulo · Rodovia Anhanguera (Perus/Cajamar)', 0.5, 0.85],
   ['Campinas · Cambuí', 0.7, 0.82], ['Rio de Janeiro · Barra da Tijuca', 0.78, 1.12], ['Rio de Janeiro · Botafogo', 0.66, 1.12],
   ['Belo Horizonte · Savassi', 0.6, 0.91], ['Curitiba · Batel', 0.64, 0.78], ['Florianópolis · Centro', 0.58, 0.76],
   ['Porto Alegre · Moinhos de Vento', 0.55, 0.74], ['Brasília · Asa Sul', 0.72, 0.83], ['Salvador · Ondina', 0.4, 0.94],
